@@ -39,7 +39,30 @@ def load_data():
   return df
 
 
-# Funzione per recuperare i dati live da WeatherLink API v2 con diagnostica errori
+# Funzione per recuperare la lista delle stazioni associate alle API Key (Diagnostica)
+def fetch_weatherlink_stations(api_key, api_secret):
+  if not api_key or not api_secret:
+    return None, "API Key o API Secret mancanti."
+
+  t = int(time.time())
+  data_str = f"api-key{api_key}t{t}"
+  signature = hmac.new(
+      api_secret.encode("utf-8"), data_str.encode("utf-8"), hashlib.sha256
+  ).hexdigest()
+
+  url = f"https://api.weatherlink.com/v2/stations?api-key={api_key}&t={t}&api-signature={signature}"
+
+  try:
+    response = requests.get(url, timeout=10)
+    if response.status_code == 200:
+      return response.json(), "OK"
+    else:
+      return None, f"Errore HTTP {response.status_code}: {response.text}"
+  except Exception as e:
+    return None, f"Errore di connessione: {str(e)}"
+
+
+# Funzione per recuperare i dati live da WeatherLink API v2
 def fetch_weatherlink_data(station_id, api_key, api_secret):
   if not station_id or not api_key or not api_secret:
     return None, "Credenziali mancanti nei Secrets."
@@ -79,9 +102,9 @@ menu = st.sidebar.radio(
     ],
 )
 
-# Lettura sicura delle credenziali dai Secrets di Streamlit (invisibili al pubblico)
+# Lettura sicura delle credenziali dai Secrets di Streamlit
 try:
-  wl_station_id = st.secrets["weatherlink"]["station_id"]
+  wl_station_id = str(st.secrets["weatherlink"]["station_id"])
   wl_api_key = st.secrets["weatherlink"]["api_key"]
   wl_api_secret = st.secrets["weatherlink"]["api_secret"]
 except Exception:
@@ -149,6 +172,26 @@ if menu == "📊 Dashboard & Record Mensili":
       st.error(
           f"Impossibile recuperare i dati da WeatherLink. Dettaglio: {err_msg}"
       )
+
+      # Riquadro di diagnostica per scoprire l'ID corretto
+      with st.expander(
+          "🔍 Trova Station ID Corretto (Strumento Diagnostica)"
+      ):
+        st.write(
+            "Tentativo di interrogare l'elenco delle stazioni associate alle tue"
+            " chiavi..."
+        )
+        stations_res, stations_err = fetch_weatherlink_stations(
+            wl_api_key, wl_api_secret
+        )
+        if stations_res and "stations" in stations_res:
+          st.success("Connessione alle API riuscita!")
+          st.json(stations_res["stations"])
+        else:
+          st.error(
+              f"Impossibile leggere l'elenco delle stazioni. Dettaglio:"
+              f" {stations_err}"
+          )
   else:
     st.info(
         "💡 Configura le credenziali WeatherLink (`station_id`, `api_key`,"
@@ -417,7 +460,7 @@ elif menu == "➕ Inserisci Misura":
         )
         conn.commit()
         conn.close()
-        st.cache_data.clear()
+        str.cache_data.clear() if hasattr(st, "cache_data") else None
         st.success("Misura registrata con successo nel database!")
       except Exception as e:
         st.error(f"Errore durante il salvataggio: {e}")
