@@ -62,7 +62,7 @@ st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
 
 df = load_data()
 
-# Menu laterale con le etichette aggiornate
+# Menu laterale con la nuova voce aggiunta
 menu = st.sidebar.radio(
     "Menu Principale",
     [
@@ -70,6 +70,7 @@ menu = st.sidebar.radio(
         "🔍 Consultazione Database",
         "📅 Dati Giornalieri",
         "📈 Dati Mensili",
+        "📊 Grafici Annuali",
         "➕ Inserisci Misura",
         "📁 Importa / Esporta Dati",
     ],
@@ -637,7 +638,84 @@ elif menu == "📈 Dati Mensili":
       plt.close(fig_ann)
 
 # ==========================================
-# 5. INSERISCI MISURA MANUALE
+# 5. GRAFICI ANNUALI (GLOBALE)
+# ==========================================
+elif menu == "📊 Grafici Annuali":
+  st.header("Grafici Annuali Globali (Temperatura & Pioggia)")
+  st.write(
+      "Panoramica complessiva di tutti gli anni registrati nel database:"
+      " temperatura media annua e pioggia totale annua, senza alcuna"
+      " selezione richiesta."
+  )
+
+  temp_df = df.copy()
+  temp_df["Anno"] = temp_df["Data_dt"].dt.year
+
+  annuale_globale = (
+      temp_df.groupby("Anno")
+      .agg({"Temperatura_Media_C": "mean", "Pioggia_mm": "sum"})
+      .reset_index()
+  )
+
+  if annuale_globale.empty:
+    st.info("Nessun dato disponibile per generare i grafici annuali.")
+  else:
+    fig_glob, (ax1_g, ax2_g) = plt.subplots(
+        2, 1, figsize=(8, 7), dpi=180, sharex=True
+    )
+
+    # 1. Subplot Temperatura Media Annua
+    ax1_g.plot(
+        annuale_globale["Anno"],
+        annuale_globale["Temperatura_Media_C"],
+        label="Temperatura Media Annua (°C)",
+        color="#2ca02c",
+        marker="o",
+        linewidth=2,
+        markersize=6,
+    )
+    ax1_g.set_title(
+        "Andamento Storico - Temperatura Media Annua & Pioggia Totale",
+        fontsize=12,
+        fontweight="bold",
+        pad=12,
+    )
+    ax1_g.set_ylabel("Temperatura Media (°C)", fontsize=10)
+    ax1_g.grid(True, linestyle="--", alpha=0.5)
+    ax1_g.legend(loc="upper right", fontsize=8)
+
+    # 2. Subplot Pioggia Totale Annua (Barre)
+    ax2_g.bar(
+        annuale_globale["Anno"],
+        annuale_globale["Pioggia_mm"],
+        label="Pioggia Totale Annua (mm)",
+        color="#1c83e1",
+        alpha=0.8,
+        width=0.6,
+    )
+    ax2_g.set_xlabel("Anno", fontsize=10)
+    ax2_g.set_ylabel("Pioggia Totale (mm)", fontsize=10)
+    ax2_g.grid(True, linestyle="--", alpha=0.5)
+    ax2_g.legend(loc="upper right", fontsize=8)
+    ax2_g.set_xticks(annuale_globale["Anno"])
+
+    plt.tight_layout()
+    st.pyplot(fig_glob)
+
+    buf_glob = io.BytesIO()
+    fig_glob.savefig(buf_glob, format="png", bbox_inches="tight")
+    buf_glob.seek(0)
+
+    st.download_button(
+        label="📥 Scarica Grafico Annuale Globale (PNG)",
+        data=buf_glob,
+        file_name="meteo_grafico_annuale_globale.png",
+        mime="image/png",
+    )
+    plt.close(fig_glob)
+
+# ==========================================
+# 6. INSERISCI MISURA MANUALE
 # ==========================================
 elif menu == "➕ Inserisci Misura":
   st.header("Inserimento Manuale Dati nel Database")
@@ -695,7 +773,7 @@ elif menu == "➕ Inserisci Misura":
         st.error(f"Errore durante il salvataggio: {e}")
 
 # ==========================================
-# 6. IMPORTA / ESPORTA DATI
+# 7. IMPORTA / ESPORTA DATI
 # ==========================================
 elif menu == "📁 Importa / Esporta Dati":
   st.header("Gestione File (CSV / Excel)")
