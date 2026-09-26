@@ -4,7 +4,7 @@ import sqlite3
 import matplotlib.pyplot as plt
 from datetime import datetime
 
-# Nome del database SQLite condiviso con la versione PC
+# Nome del database SQLite condiviso
 DB_NAME = "meteo_database.db"
 
 st.set_page_config(page_title="Gestore Stazione Meteo - Web App", layout="wide", page_icon="🌦️")
@@ -16,163 +16,183 @@ def load_data():
     try:
         df = pd.read_sql("SELECT * FROM misurazioni ORDER BY Data ASC", conn)
     except Exception:
-        df = pd.DataFrame(columns=['Data', 'Temperatura_Min_C', 'Temperatura_Max_C', 'Temperatura_Media_C', 'Umidita_Perc', 'Pioggia_mm'])
+        df = pd.DataFrame(columns=['Data', 'Temperatura_Min_C', 'Temperatura_Max_C', 'Temperatura_Media_C', 'Umidita_%', 'Pioggia_mm'])
     conn.close()
     if not df.empty:
-        # Normalizzazione del campo data
         df['Data_dt'] = pd.to_datetime(df['Data'], errors='coerce')
     return df
 
 st.title("🌦️ Gestore Statistiche Meteo (Versione Web)")
-st.write("Applicazione speculare al software desktop, collegata allo stesso database SQLite[cite: 1].")
 
 df = load_data()
 
-# Menu di navigazione laterale speculare alle funzioni del tool PC
+# Menu laterale sempre visibile per la navigazione
 menu = st.sidebar.selectbox("Menu Principale", [
-    "📊 Dashboard & Trend",
-    "📈 Confronto Giornaliero",
-    "📅 Storico Mese & Anno",
+    "📊 Dashboard & Record Mensili",
+    "🔍 Dettaglio Giornaliero",
+    "📅 Dettaglio & Estremi Mensili",
+    "📈 Estremi Annuali",
     "➕ Inserisci Misura",
-    "📁 Importa / Esporta Dati",
-    "📱 Card Social"
+    "📁 Importa / Esporta Dati"
 ])
 
 if df.empty:
-    st.warning("Il database è attualmente vuoto. Utilizza la sezione 'Importa / Esporta Dati' o 'Inserisci Misura' per popolare le misurazioni[cite: 1].")
+    st.warning("Il database è attualmente vuoto. Utilizza la sezione 'Importa / Esporta Dati' o 'Inserisci Misura' per popolare le misurazioni.")
 else:
     if 'Data_dt' not in df.columns:
         df['Data_dt'] = pd.to_datetime(df['Data'], errors='coerce')
 
 # ==========================================
-# 1. DASHBOARD & TREND
+# 1. DASHBOARD & RECORD MENSILI E ASSOLUTI
 # ==========================================
-if menu == "📊 Dashboard & Trend":
-    st.header("Riepilogo e Andamento Generale")
+if menu == "📊 Dashboard & Record Mensili":
+    st.header("Dashboard: Record Mensili e Assoluti")
+    st.write("Tabella riepilogativa con le due temperature massime più alte e le due minime più basse per ogni mese, inclusi i record assoluti.")
     
-    if not df.empty:
-        max_assoluta = df['Temperatura_Max_C'].max()
-        min_assoluta = df['Temperatura_Min_C'].min()
-        media_generale = df['Temperatura_Media_C'].mean()
-        total_rain = df['Pioggia_mm'].sum()
-        avg_hum = df['Umidita_Perc'].mean()
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Temp Max Assoluta", f"{max_assoluta:.1f} °C")
-        col2.metric("Temp Min Assoluta", f"{min_assoluta:.1f} °C")
-        col3.metric("Temperatura Media", f"{media_generale:.1f} °C")
-        col4.metric("Pioggia Totale", f"{total_rain:.1f} mm")
-        
-        st.subheader("📈 Andamento Temperature nel Tempo")
-        chart_data = df.set_index('Data')[['Temperatura_Max_C', 'Temperatura_Media_C', 'Temperatura_Min_C']]
-        st.line_chart(chart_data)
-        
-        st.subheader("📋 Tabella Completa Dati")
-        st.dataframe(df.drop(columns=['Data_dt'], errors='ignore'), use_container_width=True)
-
-# ==========================================
-# 2. CONFRONTO GIORNALIERO (Richiesta specifica)
-# ==========================================
-elif menu == "📈 Confronto Giornaliero":
-    st.header("Confronto Giornaliero con la Media Storica")
-    st.write("Seleziona un Anno e un Mese per confrontare le temperature giornaliere con la media storica dello stesso giorno negli anni precedenti.")
+    mesi_nomi = {
+        1: "Gennaio", 2: "Febbraio", 3: "Marzo", 4: "Aprile",
+        5: "Maggio", 6: "Giugno", 7: "Luglio", 8: "Agosto",
+        9: "Settembre", 10: "Ottobre", 11: "Novembre", 12: "Dicembre"
+    }
     
-    if not df.empty:
-        anni_disponibili = sorted(df['Data_dt'].dt.year.dropna().unique(), reverse=True)
-        col_a, col_m = st.columns(2)
-        sel_anno = col_a.selectbox("Seleziona Anno", anni_disponibili)
-        
-        mesi_dict = {
-            "Gennaio": 1, "Febbraio": 2, "Marzo": 3, "Aprile": 4,
-            "Maggio": 5, "Giugno": 6, "Luglio": 7, "Agosto": 8,
-            "Settembre": 9, "Ottobre": 10, "Novembre": 11, "Dicembre": 12
-        }
-        sel_mese_str = col_m.selectbox("Seleziona Mese", list(mesi_dict.keys()))
-        m_num = mesi_dict[sel_mese_str]
-        
-        # Filtra dati del mese/anno selezionato
-        df_target = df[(df['Data_dt'].dt.year == sel_anno) & (df['Data_dt'].dt.month == m_num)].copy()
-        
-        if df_target.empty:
-            st.info(f"Nessun dato registrato per {sel_mese_str} {sel_anno}.")
-        else:
-            df_target['Giorno'] = df_target['Data_dt'].dt.day
-            
-           # Calcolo media storica dello stesso giorno negli altri anni
-            df_storico = df[(df['Data_dt'].dt.month == m_num) & (df['Data_dt'].dt.year != sel_anno)].copy()
-            if not df_storico.empty:
-                df_storico['Giorno'] = df_storico['Data_dt'].dt.day
-                storico_avg = df_storico.groupby('Giorno')['Temperatura_Media_C'].mean().reset_index()
-                storico_avg = storico_avg.rename(columns={'Temperatura_Media_C': 'Media_Storica'})
-            else:
-                storico_avg = pd.DataFrame(columns=['Giorno', 'Media_Storica'])
-                
-            # Uniamo per il grafico
-            merged = pd.merge(df_target[['Giorno', 'Temperatura_Media_C', 'Temperatura_Max_C', 'Temperatura_Min_C']], storico_avg, on='Giorno', how='left')
-            merged = merged.sort_values('Giorno').set_index('Giorno')
-            
-            fig, ax = plt.subplots(figsize=(10, 5), dpi=100)
-            ax.plot(merged.index, merged['Temperatura_Media_C'], marker='o', color='#1976d2', linewidth=2, label=f'Temp. Media {sel_mese_str} {sel_anno}')
-            ax.plot(merged.index, merged['Temperatura_Max_C'], marker='^', color='#d32f2f', linestyle='--', alpha=0.7, label=f'Temp. Max {sel_anno}')
-            ax.plot(merged.index, merged['Temperatura_Min_C'], marker='v', color='#388e3c', linestyle='--', alpha=0.7, label=f'Temp. Min {sel_anno}')
-            
-            if not storico_avg.empty:
-                ax.plot(merged.index, merged['Media_Storica'], color='black', linestyle='-.', linewidth=2, label='Media Storica Giornaliera')
-                
-            ax.set_title(f"Confronto Giornaliero - {sel_mese_str} {sel_anno}", fontsize=12, fontweight='bold')
-            ax.set_xlabel("Giorno del Mese")
-            ax.set_ylabel("Temperatura (°C)")
-            ax.grid(True, linestyle='--', alpha=0.6)
-            ax.legend(loc='best')
-            
-            st.pyplot(fig)
-
-# ==========================================
-# 3. STORICO MESE & ANNO
-# ==========================================
-elif menu == "📅 Storico Mese & Anno":
-    st.header("Analisi Storica Mensile e Annuale")
-    tab_m, tab_a = st.tabs(["📊 Storico Mese", "📊 Storico Anno"])
+    temp_df = df.copy()
+    temp_df['Mese_Num'] = temp_df['Data_dt'].dt.month
     
-    with tab_m:
-        mesi_dict = {
-            "Gennaio": 1, "Febbraio": 2, "Marzo": 3, "Aprile": 4,
-            "Maggio": 5, "Giugno": 6, "Luglio": 7, "Agosto": 8,
-            "Settembre": 9, "Ottobre": 10, "Novembre": 11, "Dicembre": 12
-        }
-        sel_m_str = st.selectbox("Mese di riferimento:", list(mesi_dict.keys()), key="storico_m")
-        m_val = mesi_dict[sel_m_str]
-        
-        temp_df = df.copy()
-        temp_df['Anno'] = temp_df['Data_dt'].dt.year
-        temp_df['Mese'] = temp_df['Data_dt'].dt.month
-        m_data = temp_df[temp_df['Mese'] == m_val]
-        
+    table_data = []
+    
+    for m_num in range(1, 13):
+        m_data = temp_df[temp_df['Mese_Num'] == m_num]
         if not m_data.empty:
-            hist_m = m_data.groupby('Anno')['Temperatura_Media_C'].mean().reset_index()
-            fig, ax = plt.subplots(figsize=(8, 4), dpi=100)
-            ax.plot(hist_m['Anno'].astype(str), hist_m['Temperatura_Media_C'], marker='o', color='#3f51b5', linewidth=2.5)
-            ax.set_title(f"Temperatura Media Storica per il mese di {sel_m_str}", fontweight='bold')
-            ax.set_ylabel("Temp (°C)")
-            ax.grid(True, linestyle='--', alpha=0.6)
-            st.pyplot(fig)
-        else:
-            st.info("Nessun dato disponibile per questo mese.")
+            # Prendi le 2 massime più alte
+            top2_max = m_data.nlargest(2, 'Temperatura_Max_C')
+            max_str_list = []
+            for _, r in top2_max.iterrows():
+                max_str_list.append(f"{r['Temperatura_Max_C']:.1f} °C ({str(r['Data']).split()[0]})")
+            max_str = " | ".join(max_str_list)
             
-    with tab_a:
-        temp_df = df.copy()
-        temp_df['Anno'] = temp_df['Data_dt'].dt.year
-        hist_a = temp_df.groupby('Anno')['Temperatura_Media_C'].mean().reset_index()
-        if not hist_a.empty:
-            fig, ax = plt.subplots(figsize=(8, 4), dpi=100)
-            ax.plot(hist_a['Anno'].astype(str), hist_a['Temperatura_Media_C'], marker='s', color='#2e7d32', linewidth=2.5)
-            ax.set_title("Temperatura Media Annua", fontweight='bold')
-            ax.set_ylabel("Temp (°C)")
-            ax.grid(True, linestyle='--', alpha=0.6)
-            st.pyplot(fig)
+            # Prendi le 2 minime più basse
+            bot2_min = m_data.nsmallest(2, 'Temperatura_Min_C')
+            min_str_list = []
+            for _, r in bot2_min.iterrows():
+                min_str_list.append(f"{r['Temperatura_Min_C']:.1f} °C ({str(r['Data']).split()[0]})")
+            min_str = " | ".join(min_str_list)
+            
+            table_data.append({
+                "Mese": mesi_nomi[m_num],
+                "Top 2 Temp Max": max_str,
+                "Top 2 Temp Min": min_str
+            })
+            
+    summary_df = pd.DataFrame(table_data)
+    if not summary_df.empty:
+        st.dataframe(summary_df, use_container_width=True)
+        
+    # Riga record assoluti
+    if not temp_df.empty:
+        abs_max_idx = temp_df['Temperatura_Max_C'].idxmax()
+        abs_max_val = temp_df.loc[abs_max_idx, 'Temperatura_Max_C']
+        abs_max_date = str(temp_df.loc[abs_max_idx, 'Data']).split()[0]
+        
+        abs_min_idx = temp_df['Temperatura_Min_C'].idxmin()
+        abs_min_val = temp_df.loc[abs_min_idx, 'Temperatura_Min_C']
+        abs_min_date = str(temp_df.loc[abs_min_idx, 'Data']).split()[0]
+        
+        st.markdown("### 🌟 Record Assoluti Generali")
+        col_a, col_b = st.columns(2)
+        col_a.metric("Temperatura Max Assoluta", f"{abs_max_val:.1f} °C", f"Data: {abs_max_date}")
+        col_b.metric("Temperatura Min Assoluta", f"{abs_min_val:.1f} °C", f"Data: {abs_min_date}")
 
 # ==========================================
-# 4. INSERISCI MISURA MANUALE
+# 2. DETTAGLIO GIORNALIERO (RANGE)
+# ==========================================
+elif menu == "🔍 Dettaglio Giornaliero":
+    st.header("Dettaglio Giornaliero (Intervallo Date)")
+    
+    min_d = df['Data_dt'].min().date()
+    max_d = df['Data_dt'].max().date()
+    
+    col1, col2 = st.columns(2)
+    start_date = col1.date_input("Data Inizio", min_d)
+    end_date = col2.date_input("Data Fine", max_d)
+    
+    filtered_df = df[(df['Data_dt'].dt.date >= start_date) & (df['Data_dt'].dt.date <= end_date)]
+    st.dataframe(filtered_df.drop(columns=['Data_dt'], errors='ignore'), use_container_width=True)
+
+# ==========================================
+# 3. DETTAGLIO & ESTREMI MENSILI
+# ==========================================
+elif menu == "📅 Dettaglio & Estremi Mensili":
+    st.header("Dettaglio & Estremi Mensili")
+    
+    col1, col2 = st.columns(2)
+    anni_disp = sorted(df['Data_dt'].dt.year.dropna().unique())
+    sel_anno = col1.selectbox("Seleziona Anno", anni_disp) if anni_disp else datetime.now().year
+    
+    mesi_dict = {
+        "Gennaio": 1, "Febbraio": 2, "Marzo": 3, "Aprile": 4,
+        "Maggio": 5, "Giugno": 6, "Luglio": 7, "Agosto": 8,
+        "Settembre": 9, "Ottobre": 10, "Novembre": 11, "Dicembre": 12
+    }
+    sel_mese_str = col2.selectbox("Seleziona Mese", list(mesi_dict.keys()))
+    sel_mese_num = mesi_dict[sel_mese_str]
+    
+    m_data = df[(df['Data_dt'].dt.year == sel_anno) & (df['Data_dt'].dt.month == sel_mese_num)]
+    
+    if m_data.empty:
+        st.info("Nessun dato trovato per il mese e anno selezionati.")
+    else:
+        st.subheader(f"📊 Riepilogo Estremi - {sel_mese_str} {sel_anno}")
+        tmax_max = m_data['Temperatura_Max_C'].max()
+        tmin_min = m_data['Temperatura_Min_C'].min()
+        tmed_mean = m_data['Temperatura_Media_C'].mean()
+        rain_sum = m_data['Pioggia_mm'].sum()
+        
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Temp Max Assoluta", f"{tmax_max:.1f} °C")
+        c2.metric("Temp Min Assoluta", f"{tmin_min:.1f} °C")
+        c3.metric("Temp Media Mese", f"{tmed_mean:.1f} °C")
+        c4.metric("Pioggia Totale", f"{rain_sum:.1f} mm")
+        
+        st.subheader("📋 Tutte le misurazioni del mese")
+        st.dataframe(m_data.drop(columns=['Data_dt'], errors='ignore'), use_container_width=True)
+
+# ==========================================
+# 4. ESTREMI ANNUALI
+# ==========================================
+elif menu == "📈 Estremi Annuali":
+    st.header("Estremi Annuali")
+    
+    temp_df = df.copy()
+    temp_df['Anno'] = temp_df['Data_dt'].dt.year
+    
+    annual_list = []
+    for anno, group in temp_df.groupby('Anno'):
+        if group.empty:
+            continue
+        max_idx = group['Temperatura_Max_C'].idxmax()
+        max_val = group.loc[max_idx, 'Temperatura_Max_C']
+        max_date = str(group.loc[max_idx, 'Data']).split()[0]
+        
+        min_idx = group['Temperatura_Min_C'].idxmin()
+        min_val = group.loc[min_idx, 'Temperatura_Min_C']
+        min_date = str(group.loc[min_idx, 'Data']).split()[0]
+        
+        rain_sum = group['Pioggia_mm'].sum()
+        
+        annual_list.append({
+            "Anno": int(anno),
+            "Temp Max Assoluta (°C)": f"{max_val:.1f}",
+            "Data Max": max_date,
+            "Temp Min Assoluta (°C)": f"{min_val:.1f}",
+            "Data Min": min_date,
+            "Pioggia Totale (mm)": f"{rain_sum:.1f}"
+        })
+        
+    annual_df = pd.DataFrame(annual_list)
+    st.dataframe(annual_df, use_container_width=True)
+
+# ==========================================
+# 5. INSERISCI MISURA MANUALE
 # ==========================================
 elif menu == "➕ Inserisci Misura":
     st.header("Inserimento Manuale Dati nel Database")
@@ -209,12 +229,12 @@ elif menu == "➕ Inserisci Misura":
                 conn.commit()
                 conn.close()
                 st.cache_data.clear()
-                st.success("Misura registrata con successo nel database[cite: 1]!")
+                st.success("Misura registrata con successo nel database!")
             except Exception as e:
                 st.error(f"Errore durante il salvataggio: {e}")
 
 # ==========================================
-# 5. IMPORTA / ESPORTA DATI
+# 6. IMPORTA / ESPORTA DATI
 # ==========================================
 elif menu == "📁 Importa / Esporta Dati":
     st.header("Gestione File (CSV / Excel)")
@@ -232,7 +252,7 @@ elif menu == "📁 Importa / Esporta Dati":
             df_up.to_sql('misurazioni', conn, if_exists='replace', index=False)
             conn.close()
             st.cache_data.clear()
-            st.success("Database aggiornato con successo tramite il file caricato[cite: 1]!")
+            st.success("Database aggiornato con successo tramite il file caricato!")
         except Exception as e:
             st.error(f"Errore nell'importazione: {e}")
             
@@ -240,20 +260,3 @@ elif menu == "📁 Importa / Esporta Dati":
     if not df.empty:
         csv_bytes = df.drop(columns=['Data_dt'], errors='ignore').to_csv(index=False).encode('utf-8')
         st.download_button("Scarica dati in formato CSV", data=csv_bytes, file_name="export_meteo.csv", mime="text/csv")
-
-# ==========================================
-# 6. CARD SOCIAL
-# ==========================================
-elif menu == "📱 Card Social":
-    st.header("Riepilogo Dati per Social Network")
-    if not df.empty:
-        latest_row = df.iloc[-1]
-        st.info("Ultima rilevazione disponibile nel database:")
-        st.markdown(f"""
-        * **Data:** {latest_row['Data']}
-        * **Temp Min:** {latest_row['Temperatura_Min_C']} °C
-        * **Temp Max:** {latest_row['Temperatura_Max_C']} °C
-        * **Temp Media:** {latest_row['Temperatura_Media_C']} °C
-        * **Umidità:** {latest_row['Umidita_Perc']} %
-        * **Pioggia:** {latest_row['Pioggia_mm']} mm
-        """)
