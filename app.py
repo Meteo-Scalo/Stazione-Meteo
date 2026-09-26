@@ -281,10 +281,10 @@ elif menu == "🔍 Dettaglio Giornaliero":
   )
 
 # ==========================================
-# 3. DETTAGLIO & ESTREMI MENSILI (CON GRAFICO IG 4:5)
+# 3. DETTAGLIO & ESTREMI MENSILI (CON CONFRONTO STORICO)
 # ==========================================
 elif menu == "📅 Dettaglio & Estremi Mensili":
-  st.header("Dettaglio & Estremi Mensili (con Grafico Social)")
+  st.header("Dettaglio & Estremi Mensili (con Confronto Storico)")
 
   col1, col2 = st.columns(2)
   anni_disp = sorted(df["Data_dt"].dt.year.dropna().unique())
@@ -313,7 +313,7 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
 
   m_data = df[
       (df["Data_dt"].dt.year == sel_anno)
-      & (df["Data_dt"].dt.month == sel_mese_num)
+      & (df["Data_dt"].dt.month == sel_mese_num]
   ]
 
   if m_data.empty:
@@ -325,11 +325,26 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
     tmed_mean = m_data["Temperatura_Media_C"].mean()
     rain_sum = m_data["Pioggia_mm"].sum()
 
+    # Calcolo media storica per lo stesso mese su tutti gli anni disponibili
+    hist_mese_data = df[df["Data_dt"].dt.month == sel_mese_num]
+    hist_tmed_mean = hist_mese_data["Temperatura_Media_C"].mean()
+    delta_tmed = tmed_mean - hist_tmed_mean
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Temp Max Assoluta", f"{tmax_max:.1f} °C")
     c2.metric("Temp Min Assoluta", f"{tmin_min:.1f} °C")
-    c3.metric("Temp Media Mese", f"{tmed_mean:.1f} °C")
+    c3.metric(
+        "Temp Media Mese",
+        f"{tmed_mean:.1f} °C",
+        delta=f"{delta_tmed:+.1f} °C vs storica",
+        delta_color="inverse",
+    )
     c4.metric("Pioggia Totale", f"{rain_sum:.1f} mm")
+
+    st.caption(
+        f"💡 Media storica di {sel_mese_str} calcolata sul totale degli anni:"
+        f" {hist_tmed_mean:.1f} °C"
+    )
 
     st.markdown("---")
     st.subheader("📱 Grafico Formato Instagram (4:5)")
@@ -338,7 +353,7 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
         " ottimizzato per i post di Instagram."
     )
 
-    # Creazione grafico verticale formato 4:5 (es. figsize 6x7.5)
+    # Creazione grafico verticale formato 4:5
     fig, ax = plt.subplots(figsize=(6, 7.5), dpi=200)
     ax.plot(
         m_data["Data_dt"].dt.day,
@@ -357,6 +372,14 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
         linewidth=2,
         marker="o",
         markersize=4,
+    )
+    ax.plot(
+        m_data["Data_dt"].dt.day,
+        m_data["Temperatura_Media_C"],
+        label="Temp Media (°C)",
+        color="#2ca02c",
+        linewidth=1.5,
+        linestyle="--",
     )
     ax.set_title(
         f"Meteo Monterotondo Scalo\n{sel_mese_str} {sel_anno}",
@@ -392,13 +415,14 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
     )
 
 # ==========================================
-# 4. ESTREMI ANNUALI (CON GRAFICO IG 4:5)
+# 4. ESTREMI ANNUALI (CON CONFRONTO STORICO)
 # ==========================================
 elif menu == "📈 Estremi Annuali":
   st.header("Estremi Annuali & Grafici Social")
 
   temp_df = df.copy()
   temp_df["Anno"] = temp_df["Data_dt"].dt.year
+  overall_hist_tmed = temp_df["Temperatura_Media_C"].mean()
 
   annual_list = []
   for anno, group in temp_df.groupby("Anno"):
@@ -412,6 +436,7 @@ elif menu == "📈 Estremi Annuali":
     min_val = group.loc[min_idx, "Temperatura_Min_C"]
     min_date = str(group.loc[min_idx, "Data"]).split()[0]
 
+    ann_tmed = group["Temperatura_Media_C"].mean()
     rain_sum = group["Pioggia_mm"].sum()
 
     annual_list.append({
@@ -420,10 +445,16 @@ elif menu == "📈 Estremi Annuali":
         "Data Max": max_date,
         "Temp Min Assoluta (°C)": f"{min_val:.1f}",
         "Data Min": min_date,
+        "Temp Media (°C)": f"{ann_tmed:.1f}",
+        "vs Storica (°C)": f"{(ann_tmed - overall_hist_tmed):+.1f}",
         "Pioggia Totale (mm)": f"{rain_sum:.1f}",
     })
 
   annual_df = pd.DataFrame(annual_list)
+  st.markdown(
+      f"💡 **Media storica generale (tutti gli anni):**"
+      f" {overall_hist_tmed:.1f} °C"
+  )
   st.dataframe(
       annual_df, use_container_width=True, hide_index=True
   )
@@ -443,6 +474,7 @@ elif menu == "📈 Estremi Annuali":
           .agg({
               "Temperatura_Max_C": "max",
               "Temperatura_Min_C": "min",
+              "Temperatura_Media_C": "mean",
               "Pioggia_mm": "sum",
           })
           .reset_index()
@@ -482,6 +514,15 @@ elif menu == "📈 Estremi Annuali":
           marker="o",
           linewidth=2,
       )
+      ax_ann.plot(
+          x_labels,
+          mensile_anno["Temperatura_Media_C"],
+          label=f"Media Anno {sel_anno_grafico}",
+          color="#2ca02c",
+          marker="s",
+          linewidth=2,
+      )
+
       ax_ann.set_title(
           f"Trend Temperature - Anno {sel_anno_grafico}\nMonterotondo Scalo",
           fontsize=14,
