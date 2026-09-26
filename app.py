@@ -16,6 +16,35 @@ st.set_page_config(
     page_icon="🌦️",
 )
 
+# Stile CSS personalizzato per centrare titoli, metriche e tabelle in tutte le pagine
+st.markdown(
+    """
+    <style>
+    /* Centratura di titoli e sottotitoli */
+    h1, h2, h3, h4 {
+        text-align: center;
+    }
+    
+    /* Centratura delle metriche */
+    div[data-testid="stMetric"] {
+        text-align: center;
+        align-items: center;
+    }
+    div[data-testid="stMetricValue"], div[data-testid="stMetricLabel"], div[data-testid="stMetricDelta"] {
+        text-align: center !important;
+        justify-content: center !important;
+    }
+
+    /* Centratura tabelle e dataframe */
+    div[data-testid="stDataFrame"] {
+        display: flex;
+        justify-content: center;
+    }
+    </style>
+""",
+    unsafe_allow_html=True,
+)
+
 # Configura il refresh automatico ogni 10 minuti (10 min * 60 sec * 1000 ms)
 st_autorefresh(interval=10 * 60 * 1000, key="weather_autorefresh")
 
@@ -62,11 +91,11 @@ st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
 
 df = load_data()
 
-# Menu laterale
+# Menu laterale aggiornato con "Dashboard"
 menu = st.sidebar.radio(
     "Menu Principale",
     [
-        "📊 Dashboard & Record Mensili",
+        "📊 Dashboard",
         "🔍 Consultazione Database",
         "📅 Dati Giornalieri",
         "📈 Dati Mensili",
@@ -91,7 +120,7 @@ except Exception:
 try:
   admin_password = str(st.secrets["admin"]["password"])
 except Exception:
-  admin_password = "admin123"  # Password di default se non configurata
+  admin_password = "admin123"
 
 if df.empty:
   st.warning(
@@ -103,9 +132,9 @@ else:
     df["Data_dt"] = pd.to_datetime(df["Data"], errors="coerce")
 
 # ==========================================
-# 1. DASHBOARD & RECORD MENSILI E ASSOLUTI
+# 1. DASHBOARD
 # ==========================================
-if menu == "📊 Dashboard & Record Mensili":
+if menu == "📊 Dashboard":
   st.header("Dashboard: Condizioni Live e Record Mensili")
 
   # Sezione Dati Live Weather Underground
@@ -730,7 +759,6 @@ elif menu == "➕ Inserisci Misura":
         st.error("❌ Password errata.")
     st.stop()
 
-  # Se autenticato, mostra il form
   st.success("🔓 Accesso autorizzato")
   if st.button("🔒 Esci dall'area protetta"):
     st.session_state["auth_ok"] = False
