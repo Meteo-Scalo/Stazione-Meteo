@@ -1,4 +1,5 @@
 from datetime import datetime
+import io
 import matplotlib.pyplot as plt
 import pandas as pd
 import requests
@@ -280,10 +281,10 @@ elif menu == "🔍 Dettaglio Giornaliero":
   )
 
 # ==========================================
-# 3. DETTAGLIO & ESTREMI MENSILI
+# 3. DETTAGLIO & ESTREMI MENSILI (CON GRAFICO IG 4:5)
 # ==========================================
 elif menu == "📅 Dettaglio & Estremi Mensili":
-  st.header("Dettaglio & Estremi Mensili")
+  st.header("Dettaglio & Estremi Mensili (con Grafico Social)")
 
   col1, col2 = st.columns(2)
   anni_disp = sorted(df["Data_dt"].dt.year.dropna().unique())
@@ -330,6 +331,59 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
     c3.metric("Temp Media Mese", f"{tmed_mean:.1f} °C")
     c4.metric("Pioggia Totale", f"{rain_sum:.1f} mm")
 
+    st.markdown("---")
+    st.subheader("📱 Grafico Formato Instagram (4:5)")
+    st.write(
+        "Generazione automatica di un grafico in formato verticale 4:5"
+        " ottimizzato per i post di Instagram."
+    )
+
+    # Creazione grafico verticale formato 4:5 (es. figsize 6x7.5)
+    fig, ax = plt.subplots(figsize=(6, 7.5), dpi=200)
+    ax.plot(
+        m_data["Data_dt"].dt.day,
+        m_data["Temperatura_Max_C"],
+        label="Temp Max (°C)",
+        color="#ff4b4b",
+        linewidth=2,
+        marker="o",
+        markersize=4,
+    )
+    ax.plot(
+        m_data["Data_dt"].dt.day,
+        m_data["Temperatura_Min_C"],
+        label="Temp Min (°C)",
+        color="#1c83e1",
+        linewidth=2,
+        marker="o",
+        markersize=4,
+    )
+    ax.set_title(
+        f"Meteo Monterotondo Scalo\n{sel_mese_str} {sel_anno}",
+        fontsize=14,
+        fontweight="bold",
+        pad=15,
+    )
+    ax.set_xlabel("Giorno del mese", fontsize=10)
+    ax.set_ylabel("Temperatura (°C)", fontsize=10)
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.legend(loc="upper right")
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    buf.seek(0)
+
+    st.download_button(
+        label="📥 Scarica Grafico per Instagram (PNG 4:5)",
+        data=buf,
+        file_name=f"meteo_{sel_mese_str}_{sel_anno}.png",
+        mime="image/png",
+    )
+    plt.close(fig)
+
     st.subheader("📋 Tutte le misurazioni del mese")
     st.dataframe(
         m_data.drop(columns=["Data_dt"], errors="ignore"),
@@ -338,10 +392,10 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
     )
 
 # ==========================================
-# 4. ESTREMI ANNUALI
+# 4. ESTREMI ANNUALI (CON GRAFICO IG 4:5)
 # ==========================================
 elif menu == "📈 Estremi Annuali":
-  st.header("Estremi Annuali")
+  st.header("Estremi Annuali & Grafici Social")
 
   temp_df = df.copy()
   temp_df["Anno"] = temp_df["Data_dt"].dt.year
@@ -373,6 +427,85 @@ elif menu == "📈 Estremi Annuali":
   st.dataframe(
       annual_df, use_container_width=True, hide_index=True
   )
+
+  if not annual_df.empty:
+    st.markdown("---")
+    st.subheader("📱 Grafico Annuale Formato Instagram (4:5)")
+
+    sel_anno_grafico = st.selectbox(
+        "Seleziona Anno per il Grafico Social", annual_df["Anno"].tolist()
+    )
+    anno_data = temp_df[temp_df["Anno"] == sel_anno_grafico]
+
+    if not anno_data.empty:
+      mensile_anno = (
+          anno_data.groupby(anno_data["Data_dt"].dt.month)
+          .agg({
+              "Temperatura_Max_C": "max",
+              "Temperatura_Min_C": "min",
+              "Pioggia_mm": "sum",
+          })
+          .reset_index()
+      )
+
+      # Grafico verticale 4:5
+      fig_ann, ax_ann = plt.subplots(figsize=(6, 7.5), dpi=200)
+      mesi_brevi = [
+          "Gen",
+          "Feb",
+          "Mar",
+          "Apr",
+          "Mag",
+          "Giu",
+          "Lug",
+          "Ago",
+          "Set",
+          "Ott",
+          "Nov",
+          "Dic",
+      ]
+      x_labels = [mesi_brevi[int(m) - 1] for m in mensile_anno["Data_dt"]]
+
+      ax_ann.plot(
+          x_labels,
+          mensile_anno["Temperatura_Max_C"],
+          label="Max Assoluta (°C)",
+          color="#ff4b4b",
+          marker="o",
+          linewidth=2,
+      )
+      ax_ann.plot(
+          x_labels,
+          mensile_anno["Temperatura_Min_C"],
+          label="Min Assoluta (°C)",
+          color="#1c83e1",
+          marker="o",
+          linewidth=2,
+      )
+      ax_ann.set_title(
+          f"Trend Temperature - Anno {sel_anno_grafico}\nMonterotondo Scalo",
+          fontsize=14,
+          fontweight="bold",
+          pad=15,
+      )
+      ax_ann.set_ylabel("Temperatura (°C)", fontsize=10)
+      ax_ann.grid(True, linestyle="--", alpha=0.5)
+      ax_ann.legend(loc="upper right")
+
+      plt.tight_layout()
+      st.pyplot(fig_ann)
+
+      buf_ann = io.BytesIO()
+      fig_ann.savefig(buf_ann, format="png", bbox_inches="tight")
+      buf_ann.seek(0)
+
+      st.download_button(
+          label=f"📥 Scarica Grafico Anno {sel_anno_grafico} per Instagram (PNG 4:5)",
+          data=buf_ann,
+          file_name=f"meteo_anno_{sel_anno_grafico}.png",
+          mime="image/png",
+      )
+      plt.close(fig_ann)
 
 # ==========================================
 # 5. INSERISCI MISURA MANUALE
