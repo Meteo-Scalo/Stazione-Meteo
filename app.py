@@ -39,10 +39,10 @@ def load_data():
   return df
 
 
-# Funzione per recuperare e decodificare i dati live da WeatherLink API v2
+# Funzione per recuperare i dati live da WeatherLink API v2 con diagnostica errori
 def fetch_weatherlink_data(station_id, api_key, api_secret):
   if not station_id or not api_key or not api_secret:
-    return None
+    return None, "Credenziali mancanti nei Secrets."
 
   t = int(time.time())
   data_str = f"api-key{api_key}t{t}"
@@ -55,11 +55,11 @@ def fetch_weatherlink_data(station_id, api_key, api_secret):
   try:
     response = requests.get(url, timeout=10)
     if response.status_code == 200:
-      return response.json()
+      return response.json(), "OK"
     else:
-      return None
-  except Exception:
-    return None
+      return None, f"Errore HTTP {response.status_code}: {response.text}"
+  except Exception as e:
+    return None, f"Errore di connessione: {str(e)}"
 
 
 st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
@@ -107,30 +107,24 @@ if menu == "📊 Dashboard & Record Mensili":
   # Sezione Dati Live WeatherLink (Sopra la tabella dei record)
   st.markdown("### 🔴 Dati in Tempo Reale (WeatherLink)")
   if wl_station_id and wl_api_key and wl_api_secret:
-    wl_data = fetch_weatherlink_data(wl_station_id, wl_api_key, wl_api_secret)
+    wl_data, err_msg = fetch_weatherlink_data(
+        wl_station_id, wl_api_key, wl_api_secret
+    )
     if wl_data and "sensors" in wl_data:
       try:
         temp_val = "N.D."
         hum_val = "N.D."
         rain_val = "N.D."
 
-        # Esplorazione dei sensori restituiti da WeatherLink v2
         for sensor in wl_data["sensors"]:
           data_list = sensor.get("data", [])
           for item in data_list:
-            # Di solito il sensore ISS principale restituisce temp, hum e rain rate/accumulata
             if "temp" in item and temp_val == "N.D.":
-              # Conversione eventuale da Fahrenheit a Celsius se necessario (WeatherLink restituisce spesso in F a seconda del profilo)
-              # Qui assumiamo i campi standard metrici o applichiamo la conversione se il dato è in F (> 50 e context)
               t_f = item.get("temp")
               if t_f is not None:
-                # Se la temperatura sembra Fahrenheit (es. > 50 in inverno italiano è impossibile, ma gestiamo i gradi Celsius se l'API è impostata su metric)
-                # Nelle API v2 di solito viene restituita nell'unità configurata sulla station. Supponiamo Celsius o convertiamo:
                 temp_val = f"{t_f:.1f}"
-
             if "hum" in item and hum_val == "N.D.":
               hum_val = f"{item.get('hum')}"
-
             if (
                 "rain_day_mm" in item or "rainfall_daily_mm" in item
             ) and rain_val == "N.D.":
@@ -150,17 +144,15 @@ if menu == "📊 Dashboard & Record Mensili":
         )
         col_l4.metric("Stato", "Connesso ✅")
       except Exception as e:
-        st.warning(f"Errore nella lettura dei sensori WeatherLink: {e}")
+        st.warning(f"Errore nell'elaborazione dei dati dei sensori: {e}")
     else:
       st.error(
-          "Impossibile recuperare i dati da WeatherLink. Verifica le"
-          " credenziali configurate nei Secrets[cite: 3]."
+          f"Impossibile recuperare i dati da WeatherLink. Dettaglio: {err_msg}"
       )
   else:
     st.info(
         "💡 Configura le credenziali WeatherLink (`station_id`, `api_key`,"
-        " `api_secret`) nei Secrets di Streamlit per visualizzare qui sopra i"
-        " dati live della stazione[cite: 3]."
+        " `api_secret`) nei Secrets di Streamlit."
     )
 
   st.markdown("---")
