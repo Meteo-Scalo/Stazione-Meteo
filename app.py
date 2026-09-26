@@ -115,7 +115,7 @@ if menu == "📊 Dashboard & Record Mensili":
         temp_raw = metric.get("temp")
         hum_val = obs.get("humidity", "N.D.")
         pressure_raw = metric.get("pressure", "N.D.")
-        rain_val = obs.get("precipTotal", 0.0)
+        rain_val = metric.get("precipTotal", 0.0)
         obs_time = obs.get("obsTimeLocal", "Aggiornato di recente")
 
         # Conversione e formattazione sicura della temperatura con 1 decimale
@@ -373,22 +373,7 @@ elif menu == "📅 Dati Giornalieri":
     )
 
     fig, ax = plt.subplots(figsize=(6, 7.5), dpi=200)
-    ax.plot(
-        m_data_plot["Giorno"],
-        m_data_plot["Temperatura_Max_C"],
-        label="Temp Max Anno Corrente (°C)",
-        color="#ff4b4b",
-        linewidth=1.5,
-        alpha=0.7,
-    )
-    ax.plot(
-        m_data_plot["Giorno"],
-        m_data_plot["Temperatura_Min_C"],
-        label="Temp Min Anno Corrente (°C)",
-        color="#1c83e1",
-        linewidth=1.5,
-        alpha=0.7,
-    )
+    # Rimosse le curve max e min, mantenute solo le medie
     ax.plot(
         m_data_plot["Giorno"],
         m_data_plot["Temperatura_Media_C"],
@@ -508,7 +493,6 @@ elif menu == "📈 Dati Mensili":
           .reset_index()
       )
 
-      # Calcolo media storica mensile per gli anni precedenti (o fallback su tutti)
       hist_prev_annuale = temp_df[temp_df["Anno"] < sel_anno_grafico]
       if hist_prev_annuale.empty:
         hist_prev_annuale = temp_df
@@ -526,7 +510,7 @@ elif menu == "📈 Dati Mensili":
           mensile_anno, hist_monthly_mean, on="Data_dt", how="left"
       )
 
-      # Grafico verticale 4:5 con confronto storico
+      # Grafico verticale 4:5 con confronto storico (solo medie)
       fig_ann, ax_ann = plt.subplots(figsize=(6, 7.5), dpi=200)
       mesi_brevi = [
           "Gen",
@@ -544,22 +528,6 @@ elif menu == "📈 Dati Mensili":
       ]
       x_labels = [mesi_brevi[int(m) - 1] for m in mensile_anno["Data_dt"]]
 
-      ax_ann.plot(
-          x_labels,
-          mensile_anno["Temperatura_Max_C"],
-          label="Max Assoluta Anno Corrente (°C)",
-          color="#ff4b4b",
-          linewidth=1.5,
-          alpha=0.7,
-      )
-      ax_ann.plot(
-          x_labels,
-          mensile_anno["Temperatura_Min_C"],
-          label="Min Assoluta Anno Corrente (°C)",
-          color="#1c83e1",
-          linewidth=1.5,
-          alpha=0.7,
-      )
       ax_ann.plot(
           x_labels,
           mensile_anno["Temperatura_Media_C"],
