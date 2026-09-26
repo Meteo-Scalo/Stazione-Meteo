@@ -85,7 +85,17 @@ if menu == "📊 Dashboard & Record Mensili":
             
     summary_df = pd.DataFrame(table_data)
     if not summary_df.empty:
-        st.dataframe(summary_df, use_container_width=True)
+        # Tabella record migliorata graficamente e senza numeri di indice
+        st.dataframe(
+            summary_df, 
+            use_container_width=True, 
+            hide_index=True,
+            column_config={
+                "Mese": st.column_config.TextColumn("Mese", width="small"),
+                "Top 2 Temp Max": st.column_config.TextColumn("🔥 Top 2 Temperature Massime (Valore e Data)", width="large"),
+                "Top 2 Temp Min": st.column_config.TextColumn("❄️ Top 2 Temperature Minime (Valore e Data)", width="large")
+            }
+        )
         
     # Riga record assoluti
     if not temp_df.empty:
@@ -116,7 +126,7 @@ elif menu == "🔍 Dettaglio Giornaliero":
     end_date = col2.date_input("Data Fine", max_d)
     
     filtered_df = df[(df['Data_dt'].dt.date >= start_date) & (df['Data_dt'].dt.date <= end_date)]
-    st.dataframe(filtered_df.drop(columns=['Data_dt'], errors='ignore'), use_container_width=True)
+    st.dataframe(filtered_df.drop(columns=['Data_dt'], errors='ignore'), use_container_width=True, hide_index=True)
 
 # ==========================================
 # 3. DETTAGLIO & ESTREMI MENSILI
@@ -154,7 +164,7 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
         c4.metric("Pioggia Totale", f"{rain_sum:.1f} mm")
         
         st.subheader("📋 Tutte le misurazioni del mese")
-        st.dataframe(m_data.drop(columns=['Data_dt'], errors='ignore'), use_container_width=True)
+        st.dataframe(m_data.drop(columns=['Data_dt'], errors='ignore'), use_container_width=True, hide_index=True)
 
 # ==========================================
 # 4. ESTREMI ANNUALI
@@ -189,7 +199,7 @@ elif menu == "📈 Estremi Annuali":
         })
         
     annual_df = pd.DataFrame(annual_list)
-    st.dataframe(annual_df, use_container_width=True)
+    st.dataframe(annual_df, use_container_width=True, hide_index=True)
 
 # ==========================================
 # 5. INSERISCI MISURA MANUALE
