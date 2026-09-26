@@ -62,7 +62,7 @@ st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
 
 df = load_data()
 
-# Menu laterale con la nuova voce aggiunta
+# Menu laterale
 menu = st.sidebar.radio(
     "Menu Principale",
     [
@@ -76,13 +76,22 @@ menu = st.sidebar.radio(
     ],
 )
 
-# Lettura sicura delle credenziali Weather Underground dai Secrets di Streamlit
+# Gestione dello stato di autenticazione per le aree protette
+if "auth_ok" not in st.session_state:
+  st.session_state["auth_ok"] = False
+
+# Lettura sicura delle credenziali Weather Underground e della password admin dai Secrets
 try:
   wu_station_id = str(st.secrets["wunderground"]["station_id"])
   wu_api_key = str(st.secrets["wunderground"]["api_key"])
 except Exception:
   wu_station_id = ""
   wu_api_key = ""
+
+try:
+  admin_password = str(st.secrets["admin"]["password"])
+except Exception:
+  admin_password = "admin123"  # Password di default se non configurata
 
 if df.empty:
   st.warning(
@@ -119,19 +128,16 @@ if menu == "📊 Dashboard & Record Mensili":
         rain_val = obs.get("precipTotal", 0.0)
         obs_time = obs.get("obsTimeLocal", "Aggiornato di recente")
 
-        # Conversione e formattazione sicura della temperatura con 1 decimale
         try:
           temp_val = f"{float(temp_raw):.1f} °C"
         except (ValueError, TypeError):
           temp_val = "N.D."
 
-        # Conversione e formattazione sicura della pressione con 1 decimale
         try:
           pressure_val = f"{float(pressure_raw):.1f} hPa"
         except (ValueError, TypeError):
           pressure_val = "N.D."
 
-        # Layout a 5 colonne: Temperatura, Umidità, Pressione, Pioggia, Stato
         col_l1, col_l2, col_l3, col_l4, col_l5 = st.columns(5)
 
         with col_l1:
@@ -235,7 +241,6 @@ if menu == "📊 Dashboard & Record Mensili":
         },
     )
 
-  # Riga record assoluti
   if not temp_df.empty:
     abs_max_idx = temp_df["Temperatura_Max_C"].idxmax()
     abs_max_val = temp_df.loc[abs_max_idx, "Temperatura_Max_C"]
@@ -392,12 +397,10 @@ elif menu == "📅 Dati Giornalieri":
         m_data_plot, hist_daily_mean, on="Giorno", how="left"
     )
 
-    # Grafico a 2 sottotrame (Temperatura + Pioggia) formato 4:5 compatto
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True
     )
 
-    # 1. Subplot Temperature
     ax1.plot(
         m_data_plot["Giorno"],
         m_data_plot["Temperatura_Media_C"],
@@ -425,7 +428,6 @@ elif menu == "📅 Dati Giornalieri":
     ax1.grid(True, linestyle="--", alpha=0.5)
     ax1.legend(loc="upper right", fontsize=7)
 
-    # 2. Subplot Pioggia (Barre)
     ax2.bar(
         m_data_plot["Giorno"],
         m_data_plot["Pioggia_mm"],
@@ -559,7 +561,6 @@ elif menu == "📈 Dati Mensili":
           mensile_anno, hist_monthly_mean, on="Data_dt", how="left"
       )
 
-      # Grafico annuale a 2 sottotrame (Temperatura + Pioggia) formato 4:5 compatto
       fig_ann, (ax1_ann, ax2_ann) = plt.subplots(
           2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True
       )
@@ -579,7 +580,6 @@ elif menu == "📈 Dati Mensili":
       ]
       x_labels = [mesi_brevi[int(m) - 1] for m in mensile_anno["Data_dt"]]
 
-      # 1. Subplot Temperature Mensili
       ax1_ann.plot(
           x_labels,
           mensile_anno["Temperatura_Media_C"],
@@ -609,7 +609,6 @@ elif menu == "📈 Dati Mensili":
       ax1_ann.grid(True, linestyle="--", alpha=0.5)
       ax1_ann.legend(loc="upper right", fontsize=7)
 
-      # 2. Subplot Pioggia Mensile (Barre)
       ax2_ann.bar(
           x_labels,
           mensile_anno["Pioggia_mm"],
@@ -664,7 +663,6 @@ elif menu == "📊 Grafici Annuali":
         2, 1, figsize=(8, 7), dpi=180, sharex=True
     )
 
-    # 1. Subplot Temperatura Media Annua
     ax1_g.plot(
         annuale_globale["Anno"],
         annuale_globale["Temperatura_Media_C"],
@@ -684,7 +682,6 @@ elif menu == "📊 Grafici Annuali":
     ax1_g.grid(True, linestyle="--", alpha=0.5)
     ax1_g.legend(loc="upper right", fontsize=8)
 
-    # 2. Subplot Pioggia Totale Annua (Barre)
     ax2_g.bar(
         annuale_globale["Anno"],
         annuale_globale["Pioggia_mm"],
@@ -715,10 +712,30 @@ elif menu == "📊 Grafici Annuali":
     plt.close(fig_glob)
 
 # ==========================================
-# 6. INSERISCI MISURA MANUALE
+# 6. INSERISCI MISURA MANUALE (PROTETTO)
 # ==========================================
 elif menu == "➕ Inserisci Misura":
-  st.header("Inserimento Manuale Dati nel Database")
+  st.header("➕ Inserimento Manuale Dati (Area Riservata)")
+
+  if not st.session_state["auth_ok"]:
+    pwd = st.text_input(
+        "Inserisci la password amministratore per sbloccare questa sezione:",
+        type="password",
+    )
+    if st.button("Accedi"):
+      if pwd == admin_password:
+        st.session_state["auth_ok"] = True
+        st.rerun()
+      else:
+        st.error("❌ Password errata.")
+    st.stop()
+
+  # Se autenticato, mostra il form
+  st.success("🔓 Accesso autorizzato")
+  if st.button("🔒 Esci dall'area protetta"):
+    st.session_state["auth_ok"] = False
+    st.rerun()
+
   with st.form("form_inserimento"):
     col1, col2 = st.columns(2)
     with col1:
@@ -773,10 +790,29 @@ elif menu == "➕ Inserisci Misura":
         st.error(f"Errore durante il salvataggio: {e}")
 
 # ==========================================
-# 7. IMPORTA / ESPORTA DATI
+# 7. IMPORTA / ESPORTA DATI (PROTETTO)
 # ==========================================
 elif menu == "📁 Importa / Esporta Dati":
-  st.header("Gestione File (CSV / Excel)")
+  st.header("📁 Gestione File & Backup (Area Riservata)")
+
+  if not st.session_state["auth_ok"]:
+    pwd = st.text_input(
+        "Inserisci la password amministratore per sbloccare questa sezione:",
+        type="password",
+        key="pwd_import",
+    )
+    if st.button("Accedi", key="btn_import"):
+      if pwd == admin_password:
+        st.session_state["auth_ok"] = True
+        st.rerun()
+      else:
+        st.error("❌ Password errata.")
+    st.stop()
+
+  st.success("🔓 Accesso autorizzato")
+  if st.button("🔒 Esci dall'area protetta", key="btn_out_import"):
+    st.session_state["auth_ok"] = False
+    st.rerun()
 
   st.subheader("📥 Importa da file esterno")
   uploaded_file = st.file_uploader(
