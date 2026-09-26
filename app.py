@@ -3,6 +3,10 @@ import pandas as pd
 import sqlite3
 import matplotlib.pyplot as plt
 from datetime import datetime
+import requests
+import hashlib
+import hmac
+import time
 
 # Nome del database SQLite condiviso
 DB_NAME = "meteo_database.db"
@@ -22,6 +26,30 @@ def load_data():
         df['Data_dt'] = pd.to_datetime(df['Data'], errors='coerce')
     return df
 
+# Funzione per recuperare i dati live da WeatherLink API v2
+def fetch_weatherlink_data(station_id, api_key, api_secret):
+    if not station_id or not api_key or not api_secret:
+        return None
+    
+    t = int(time.time())
+    data_str = f"api-key{api_key}t{t}"
+    signature = hmac.new(
+        api_secret.encode('utf-8'),
+        data_str.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    
+    url = f"https://api.weatherlink.com/v2/current/{station_id}?api-key={api_key}&t={t}&api-signature={signature}"
+    
+    try:
+        response = requests.get(url, timeout=10)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+    except Exception:
+        return None
+
 st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
 
 df = load_data()
@@ -36,6 +64,16 @@ menu = st.sidebar.radio("Menu Principale", [
     "📁 Importa / Esporta Dati"
 ])
 
+# Lettura sicura delle credenziali dai Secrets di Streamlit (invisibili al pubblico)
+try:
+    wl_station_id = st.secrets["weatherlink"]["station_id"]
+    wl_api_key = st.secrets["weatherlink"]["api_key"]
+    wl_api_secret = st.secrets["weatherlink"]["api_secret"]
+except Exception:
+    wl_station_id = ""
+    wl_api_key = ""
+    wl_api_secret = ""
+
 if df.empty:
     st.warning("Il database è attualmente vuoto. Utilizza la sezione 'Importa / Esporta Dati' o 'Inserisci Misura' per popolare le misurazioni.")
 else:
@@ -46,7 +84,28 @@ else:
 # 1. DASHBOARD & RECORD MENSILI E ASSOLUTI
 # ==========================================
 if menu == "📊 Dashboard & Record Mensili":
-    st.header("Dashboard: Record Mensili e Assoluti")
+    st.header("Dashboard: Condizioni Live e Record Mensili")
+    
+    # Sezione Dati Live WeatherLink (Sopra la tabella dei record)
+    st.markdown("### 🔴 Dati in Tempo Reale (WeatherLink)")
+    if wl_station_id and wl_api_key and wl_api_secret:
+        wl_data = fetch_weatherlink_data(wl_station_id, wl_api_key, wl_api_secret)
+        if wl_data and "sensors" in wl_data:
+            try:
+                col_l1, col_l2, col_l3, col_l4 = st.columns(4)
+                col_l1.metric("Temperatura Attuale", "N.D. °C")
+                col_l2.metric("Umidità", "N.D. %")
+                col_l3.metric("Pioggia Odierna", "N.D. mm")
+                col_l4.metric("Stato", "Connesso ✅")
+                st.info("Dati ricevuti con successo dall'API WeatherLink v2[cite: 3].")
+            except Exception as e:
+                st.warning(f"Errore nella lettura dei sensori WeatherLink: {e}")
+        else:
+            st.error("Impossibile recuperare i dati da WeatherLink. Verifica le credenziali configurate nei Secrets.")
+    else:
+        st.info("💡 Configura le credenziali WeatherLink (`station_id`, `api_key`, `api_secret`) nei Secrets di Streamlit per visualizzare qui sopra i dati live della stazione[cite: 3].")
+    
+    st.markdown("---")
     st.write("Tabella riepilogativa con le due temperature massime più alte e le due minime più basse per ogni mese, inclusi i record assoluti.")
     
     mesi_nomi = {
@@ -63,14 +122,12 @@ if menu == "📊 Dashboard & Record Mensili":
     for m_num in range(1, 13):
         m_data = temp_df[temp_df['Mese_Num'] == m_num]
         if not m_data.empty:
-            # Prendi le 2 massime più alte
             top2_max = m_data.nlargest(2, 'Temperatura_Max_C')
             max_str_list = []
             for _, r in top2_max.iterrows():
                 max_str_list.append(f"{r['Temperatura_Max_C']:.1f} °C ({str(r['Data']).split()[0]})")
             max_str = " | ".join(max_str_list)
             
-            # Prendi le 2 minime più basse
             bot2_min = m_data.nsmallest(2, 'Temperatura_Min_C')
             min_str_list = []
             for _, r in bot2_min.iterrows():
@@ -85,7 +142,6 @@ if menu == "📊 Dashboard & Record Mensili":
             
     summary_df = pd.DataFrame(table_data)
     if not summary_df.empty:
-        # Tabella record migliorata graficamente e senza numeri di indice
         st.dataframe(
             summary_df, 
             use_container_width=True, 
