@@ -179,8 +179,17 @@ if menu == "📊 Dashboard":
         except (ValueError, TypeError):
           pressure_val = "N.D."
 
-        col_l1, col_l2, col_l3, col_l4, col_l5, col_l6 = st.columns(6)
+        # Trend pressione da Weather Underground con freccia verde/rossa
+        pressure_tendency = obs.get("pressureTendency", "")
+        if pressure_tendency == "+":
+          press_trend_str = "In aumento 🟢 ↗️"
+        elif pressure_tendency == "-":
+          press_trend_str = "In calo 🔴 ↘️"
+        else:
+          press_trend_str = "Stabile ➡️"
 
+        # Tutte le 7 metriche su un'unica riga
+        col_l1, col_l2, col_l3, col_l4, col_l5, col_l6, col_l7 = st.columns(7)
         with col_l1:
           st.metric(label="🌡️ Temperatura", value=temp_val)
         with col_l2:
@@ -197,8 +206,10 @@ if menu == "📊 Dashboard":
         with col_l4:
           st.metric(label="⏱️ Pressione", value=pressure_val)
         with col_l5:
-          st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
+          st.metric(label="📉 Trend Pressione", value=press_trend_str)
         with col_l6:
+          st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
+        with col_l7:
           st.metric(label="🟢 Stato", value="Online")
 
         st.caption(f"Ultima rilevazione stazione: {obs_time}")
