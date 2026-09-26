@@ -4,6 +4,7 @@ import pandas as pd
 import requests
 import sqlite3
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 # Nome del database SQLite condiviso
 DB_NAME = "meteo_database.db"
@@ -13,6 +14,9 @@ st.set_page_config(
     layout="wide",
     page_icon="🌦️",
 )
+
+# Configura il refresh automatico ogni 10 minuti (10 min * 60 sec * 1000 ms)
+st_autorefresh(interval=10 * 60 * 1000, key="weather_autorefresh")
 
 
 # Funzione per connettersi e caricare i dati dal database
@@ -41,7 +45,6 @@ def fetch_wunderground_data(station_id, api_key):
   if not station_id or not api_key:
     return None, "Credenziali Weather Underground mancanti nei Secrets."
 
-  # Endpoint ufficiale Weather Underground PWS per osservazioni correnti (unità metriche = m)
   url = f"https://api.weather.com/v2/pws/observations/current?stationId={station_id}&format=json&units=m&apiKey={api_key}"
 
   try:
@@ -94,8 +97,9 @@ else:
 if menu == "📊 Dashboard & Record Mensili":
   st.header("Dashboard: Condizioni Live e Record Mensili")
 
-  # Sezione Dati Live Weather Underground (Sopra la tabella dei record)
+  # Sezione Dati Live Weather Underground con grafica a schede migliorata
   st.markdown("### 🔴 Dati in Tempo Reale (Weather Underground)")
+
   if wu_station_id and wu_api_key:
     wu_data, err_msg = fetch_wunderground_data(wu_station_id, wu_api_key)
     if (
@@ -110,17 +114,45 @@ if menu == "📊 Dashboard & Record Mensili":
         temp_val = metric.get("temp", "N.D.")
         hum_val = obs.get("humidity", "N.D.")
         rain_val = metric.get("precipTotal", 0.0)
+        obs_time = obs.get("obsTimeLocal", "Aggiornato di recente")
+
+        # Layout grafico a card pulito e moderno
+        st.markdown(
+            """
+            <style>
+            .live-card {
+                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+                padding: 15px;
+                border-radius: 12px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+                margin-bottom: 15px;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
 
         col_l1, col_l2, col_l3, col_l4 = st.columns(4)
-        col_l1.metric(
-            "Temperatura Attuale",
-            f"{temp_val:.1f} °C" if temp_val != "N.D." else "N.D.",
-        )
-        col_l2.metric(
-            "Umidità", f"{hum_val} %" if hum_val != "N.D." else "N.D."
-        )
-        col_l3.metric("Pioggia Odierna", f"{rain_val:.1f} mm")
-        col_l4.metric("Stato", "Connesso ✅")
+
+        with col_l1:
+          st.metric(
+              label="🌡️ Temperatura",
+              value=f"{temp_val:.1f} °C" if temp_val != "N.D." else "N.D.",
+          )
+        with col_l2:
+          st.metric(
+              label="💧 Umidità",
+              value=f"{hum_val} %" if hum_val != "N.D." else "N.D.",
+          )
+        with col_l3:
+          st.metric(
+              label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm"
+          )
+        with col_l4:
+          st.metric(label="🟢 Stato", value="Online")
+
+        st.caption(f"Ultima rilevazione stazione: {obs_time}")
+
       except Exception as e:
         st.warning(f"Errore nell'elaborazione dei dati meteo: {e}")
     else:
