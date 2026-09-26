@@ -91,7 +91,7 @@ st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
 
 df = load_data()
 
-# Menu laterale aggiornato con "Dashboard"
+# Menu laterale con "Dashboard"
 menu = st.sidebar.radio(
     "Menu Principale",
     [
@@ -135,10 +135,7 @@ else:
 # 1. DASHBOARD
 # ==========================================
 if menu == "📊 Dashboard":
-  st.header("Dashboard: Condizioni Live e Record Mensili")
-
-  # Sezione Dati Live Weather Underground
-  st.markdown("### 🔴 Dati in Tempo Reale (Weather Underground)")
+  st.header("Condizioni in tempo reale")
 
   if wu_station_id and wu_api_key:
     wu_data, err_msg = fetch_wunderground_data(wu_station_id, wu_api_key)
@@ -203,6 +200,7 @@ if menu == "📊 Dashboard":
     )
 
   st.markdown("---")
+  st.subheader("Estremi Meteo")
   st.write(
       "Tabella riepilogativa con le due temperature massime più alte e le due"
       " minime più basse per ogni mese, inclusi i record assoluti."
