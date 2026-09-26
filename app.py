@@ -311,9 +311,10 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
   sel_mese_str = col2.selectbox("Seleziona Mese", list(mesi_dict.keys()))
   sel_mese_num = mesi_dict[sel_mese_str]
 
+  # CORRETTO: Chiusura corretta della parentesi tonda anziché quadra
   m_data = df[
       (df["Data_dt"].dt.year == sel_anno)
-      & (df["Data_dt"].dt.month == sel_mese_num]
+      & (df["Data_dt"].dt.month == sel_mese_num)
   ]
 
   if m_data.empty:
