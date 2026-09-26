@@ -292,7 +292,6 @@ elif menu == "📅 Dati Giornalieri":
   col1, col2 = st.columns(2)
   anni_disp = sorted(df["Data_dt"].dt.year.dropna().unique())
 
-  # Default su anno corrente se disponibile
   default_anno_idx = (
       anni_disp.index(current_year)
       if current_year in anni_disp
@@ -364,10 +363,12 @@ elif menu == "📅 Dati Giornalieri":
     )
 
     st.markdown("---")
-    st.subheader("📱 Grafico Compatto (Confronto Medie)")
+    st.subheader(
+        "📱 Grafico Formato Instagram (4:5) - Temperatura & Pioggia"
+    )
     st.write(
         "Confronto tra la temperatura media misurata e la media storica"
-        " giornaliera registrata negli anni precedenti nello stesso periodo."
+        " insieme al grafico a barre delle precipitazioni giornaliere."
     )
 
     hist_prev = df[
@@ -390,9 +391,13 @@ elif menu == "📅 Dati Giornalieri":
         m_data_plot, hist_daily_mean, on="Giorno", how="left"
     )
 
-    # Dimensioni grafiche ridotte per evitare scrolling eccessivo
-    fig, ax = plt.subplots(figsize=(5, 3.5), dpi=150)
-    ax.plot(
+    # Grafico a 2 sottotrame (Temperatura + Pioggia) formato 4:5 compatto
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True
+    )
+
+    # 1. Subplot Temperature
+    ax1.plot(
         m_data_plot["Giorno"],
         m_data_plot["Temperatura_Media_C"],
         label=f"Media Misurata {sel_anno} (°C)",
@@ -401,7 +406,7 @@ elif menu == "📅 Dati Giornalieri":
         marker="o",
         markersize=3,
     )
-    ax.plot(
+    ax1.plot(
         m_data_plot["Giorno"],
         m_data_plot["Temp_Media_Storica"],
         label="Media Storica (Anni Prec.) (°C)",
@@ -409,17 +414,29 @@ elif menu == "📅 Dati Giornalieri":
         linewidth=1.8,
         linestyle="--",
     )
-
-    ax.set_title(
-        f"Confronto Temperatura Media\n{sel_mese_str} {sel_anno} vs Storico",
+    ax1.set_title(
+        f"Confronto Temperatura Media & Pioggia\n{sel_mese_str} {sel_anno}",
         fontsize=11,
         fontweight="bold",
         pad=10,
     )
-    ax.set_xlabel("Giorno del mese", fontsize=9)
-    ax.set_ylabel("Temperatura (°C)", fontsize=9)
-    ax.grid(True, linestyle="--", alpha=0.5)
-    ax.legend(loc="upper right", fontsize=7)
+    ax1.set_ylabel("Temperatura (°C)", fontsize=9)
+    ax1.grid(True, linestyle="--", alpha=0.5)
+    ax1.legend(loc="upper right", fontsize=7)
+
+    # 2. Subplot Pioggia (Barre)
+    ax2.bar(
+        m_data_plot["Giorno"],
+        m_data_plot["Pioggia_mm"],
+        label="Pioggia (mm)",
+        color="#1c83e1",
+        alpha=0.8,
+        width=0.8,
+    )
+    ax2.set_xlabel("Giorno del mese", fontsize=9)
+    ax2.set_ylabel("Pioggia (mm)", fontsize=9)
+    ax2.grid(True, linestyle="--", alpha=0.5)
+    ax2.legend(loc="upper right", fontsize=7)
 
     plt.tight_layout()
     st.pyplot(fig)
@@ -429,7 +446,7 @@ elif menu == "📅 Dati Giornalieri":
     buf.seek(0)
 
     st.download_button(
-        label="📥 Scarica Grafico Compatto (PNG)",
+        label="📥 Scarica Grafico per Instagram (PNG 4:5)",
         data=buf,
         file_name=f"meteo_{sel_mese_str}_{sel_anno}.png",
         mime="image/png",
@@ -489,10 +506,13 @@ elif menu == "📈 Dati Mensili":
 
   if not annual_df.empty:
     st.markdown("---")
-    st.subheader("📱 Grafico Annuale Compatto")
+    st.subheader(
+        "📱 Grafico Annuale Formato Instagram (4:5) - Temperatura & Pioggia"
+    )
     st.write(
         "Confronto tra la temperatura media mensile misurata nell'anno"
-        " selezionato e la media storica mensile degli anni precedenti."
+        " selezionato e la media storica, insieme al totale delle piogge"
+        " mensili."
     )
 
     anni_disponibili = annual_df["Anno"].tolist()
@@ -538,8 +558,10 @@ elif menu == "📈 Dati Mensili":
           mensile_anno, hist_monthly_mean, on="Data_dt", how="left"
       )
 
-      # Dimensioni grafiche ridotte per l'anno
-      fig_ann, ax_ann = plt.subplots(figsize=(5, 3.5), dpi=150)
+      # Grafico annuale a 2 sottotrame (Temperatura + Pioggia) formato 4:5 compatto
+      fig_ann, (ax1_ann, ax2_ann) = plt.subplots(
+          2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True
+      )
       mesi_brevi = [
           "Gen",
           "Feb",
@@ -556,7 +578,8 @@ elif menu == "📈 Dati Mensili":
       ]
       x_labels = [mesi_brevi[int(m) - 1] for m in mensile_anno["Data_dt"]]
 
-      ax_ann.plot(
+      # 1. Subplot Temperature Mensili
+      ax1_ann.plot(
           x_labels,
           mensile_anno["Temperatura_Media_C"],
           label=f"Media Misurata {sel_anno_grafico} (°C)",
@@ -565,7 +588,7 @@ elif menu == "📈 Dati Mensili":
           linewidth=1.8,
           markersize=4,
       )
-      ax_ann.plot(
+      ax1_ann.plot(
           x_labels,
           mensile_anno["Temp_Media_Storica"],
           label="Media Storica (Anni Prec.) (°C)",
@@ -575,16 +598,28 @@ elif menu == "📈 Dati Mensili":
           markersize=4,
           linestyle="--",
       )
-
-      ax_ann.set_title(
-          f"Confronto Temperatura Media Mensile\nAnno {sel_anno_grafico} vs Storico",
+      ax1_ann.set_title(
+          f"Confronto Temperatura Media Mensile & Pioggia\nAnno {sel_anno_grafico}",
           fontsize=11,
           fontweight="bold",
           pad=10,
       )
-      ax_ann.set_ylabel("Temperatura (°C)", fontsize=9)
-      ax_ann.grid(True, linestyle="--", alpha=0.5)
-      ax_ann.legend(loc="upper right", fontsize=7)
+      ax1_ann.set_ylabel("Temperatura (°C)", fontsize=9)
+      ax1_ann.grid(True, linestyle="--", alpha=0.5)
+      ax1_ann.legend(loc="upper right", fontsize=7)
+
+      # 2. Subplot Pioggia Mensile (Barre)
+      ax2_ann.bar(
+          x_labels,
+          mensile_anno["Pioggia_mm"],
+          label="Pioggia Totale (mm)",
+          color="#1c83e1",
+          alpha=0.8,
+          width=0.6,
+      )
+      ax2_ann.set_ylabel("Pioggia (mm)", fontsize=9)
+      ax2_ann.grid(True, linestyle="--", alpha=0.5)
+      ax2_ann.legend(loc="upper right", fontsize=7)
 
       plt.tight_layout()
       st.pyplot(fig_ann)
@@ -594,7 +629,7 @@ elif menu == "📈 Dati Mensili":
       buf_ann.seek(0)
 
       st.download_button(
-          label=f"📥 Scarica Grafico Anno {sel_anno_grafico} (PNG)",
+          label=f"📥 Scarica Grafico Anno {sel_anno_grafico} per Instagram (PNG 4:5)",
           data=buf_ann,
           file_name=f"meteo_anno_{sel_anno_grafico}.png",
           mime="image/png",
