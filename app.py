@@ -97,7 +97,7 @@ else:
 if menu == "📊 Dashboard & Record Mensili":
   st.header("Dashboard: Condizioni Live e Record Mensili")
 
-  # Sezione Dati Live Weather Underground con grafica a schede migliorata
+  # Sezione Dati Live Weather Underground
   st.markdown("### 🔴 Dati in Tempo Reale (Weather Underground)")
 
   if wu_station_id and wu_api_key:
@@ -113,42 +113,43 @@ if menu == "📊 Dashboard & Record Mensili":
 
         temp_val = metric.get("temp", "N.D.")
         hum_val = obs.get("humidity", "N.D.")
+        pressure_val = metric.get("pressure", "N.D.")
         rain_val = metric.get("precipTotal", 0.0)
         obs_time = obs.get("obsTimeLocal", "Aggiornato di recente")
 
-        # Layout grafico a card pulito e moderno
-        st.markdown(
-            """
-            <style>
-            .live-card {
-                background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
-                padding: 15px;
-                border-radius: 12px;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-                margin-bottom: 15px;
-            }
-            </style>
-            """,
-            unsafe_allow_html=True,
-        )
-
-        col_l1, col_l2, col_l3, col_l4 = st.columns(4)
+        # Layout a 5 colonne: Temperatura (con decimali), Umidità, Pressione, Pioggia, Stato
+        col_l1, col_l2, col_l3, col_l4, col_l5 = st.columns(5)
 
         with col_l1:
           st.metric(
               label="🌡️ Temperatura",
-              value=f"{temp_val:.1f} °C" if temp_val != "N.D." else "N.D.",
+              value=(
+                  f"{float(temp_val):.1f} °C"
+                  if temp_val != "N.D." and temp_val is not None
+                  else "N.D."
+              ),
           )
         with col_l2:
           st.metric(
               label="💧 Umidità",
-              value=f"{hum_val} %" if hum_val != "N.D." else "N.D.",
+              value=(
+                  f"{hum_val} %"
+                  if hum_val != "N.D." and hum_val is not None
+                  else "N.D."
+              ),
           )
         with col_l3:
           st.metric(
-              label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm"
+              label="⏱️ Pressione",
+              value=(
+                  f"{float(pressure_val):.1f} hPa"
+                  if pressure_val != "N.D." and pressure_val is not None
+                  else "N.D."
+              ),
           )
         with col_l4:
+          st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
+        with col_l5:
           st.metric(label="🟢 Stato", value="Online")
 
         st.caption(f"Ultima rilevazione stazione: {obs_time}")
