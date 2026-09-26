@@ -149,6 +149,16 @@ if menu == "📊 Dashboard":
         metric = obs.get("metric", {})
 
         temp_raw = metric.get("temp")
+        heat_raw = metric.get("heatIndex")
+        wind_chill_raw = metric.get("windChill")
+        feels_raw = (
+            heat_raw
+            if heat_raw is not None
+            else (
+                wind_chill_raw if wind_chill_raw is not None else temp_raw
+            )
+        )
+
         hum_val = obs.get("humidity", "N.D.")
         pressure_raw = metric.get("pressure", "N.D.")
         rain_val = obs.get("precipTotal", 0.0)
@@ -160,15 +170,22 @@ if menu == "📊 Dashboard":
           temp_val = "N.D."
 
         try:
+          feels_val = f"{float(feels_raw):.1f} °C"
+        except (ValueError, TypeError):
+          feels_val = "N.D."
+
+        try:
           pressure_val = f"{float(pressure_raw):.1f} hPa"
         except (ValueError, TypeError):
           pressure_val = "N.D."
 
-        col_l1, col_l2, col_l3, col_l4, col_l5 = st.columns(5)
+        col_l1, col_l2, col_l3, col_l4, col_l5, col_l6 = st.columns(6)
 
         with col_l1:
           st.metric(label="🌡️ Temperatura", value=temp_val)
         with col_l2:
+          st.metric(label="🌡️ Temp. Avvertita", value=feels_val)
+        with col_l3:
           st.metric(
               label="💧 Umidità",
               value=(
@@ -177,11 +194,11 @@ if menu == "📊 Dashboard":
                   else "N.D."
               ),
           )
-        with col_l3:
-          st.metric(label="⏱️ Pressione", value=pressure_val)
         with col_l4:
-          st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
+          st.metric(label="⏱️ Pressione", value=pressure_val)
         with col_l5:
+          st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
+        with col_l6:
           st.metric(label="🟢 Stato", value="Online")
 
         st.caption(f"Ultima rilevazione stazione: {obs_time}")
@@ -201,9 +218,11 @@ if menu == "📊 Dashboard":
 
   st.markdown("---")
   st.subheader("Estremi Meteo")
-  st.write(
-      "Tabella riepilogativa con le due temperature massime più alte e le due"
-      " minime più basse per ogni mese, inclusi i record assoluti."
+  st.markdown(
+      "<p style='text-align: center;'>Tabella riepilogativa con le due"
+      " temperature massime più alte e le due minime più basse per ogni"
+      " mese, inclusi i record assoluti.</p>",
+      unsafe_allow_html=True,
   )
 
   mesi_nomi = {
