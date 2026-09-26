@@ -62,14 +62,14 @@ st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
 
 df = load_data()
 
-# Menu laterale con tutte le voci sempre visibili
+# Menu laterale con le etichette aggiornate
 menu = st.sidebar.radio(
     "Menu Principale",
     [
         "📊 Dashboard & Record Mensili",
-        "🔍 Dettaglio Giornaliero",
-        "📅 Dettaglio & Estremi Mensili",
-        "📈 Estremi Annuali",
+        "🔍 Consultazione Database",
+        "📅 Dati Giornalieri",
+        "📈 Dati Mensili",
         "➕ Inserisci Misura",
         "📁 Importa / Esporta Dati",
     ],
@@ -115,7 +115,7 @@ if menu == "📊 Dashboard & Record Mensili":
         temp_raw = metric.get("temp")
         hum_val = obs.get("humidity", "N.D.")
         pressure_raw = metric.get("pressure", "N.D.")
-        rain_val = metric.get("precipTotal", 0.0)
+        rain_val = obs.get("precipTotal", 0.0)
         obs_time = obs.get("obsTimeLocal", "Aggiornato di recente")
 
         # Conversione e formattazione sicura della temperatura con 1 decimale
@@ -258,10 +258,10 @@ if menu == "📊 Dashboard & Record Mensili":
     )
 
 # ==========================================
-# 2. DETTAGLIO GIORNALIERO (RANGE)
+# 2. CONSULTAZIONE DATABASE
 # ==========================================
-elif menu == "🔍 Dettaglio Giornaliero":
-  st.header("Dettaglio Giornaliero (Intervallo Date)")
+elif menu == "🔍 Consultazione Database":
+  st.header("Consultazione Database (Intervallo Date)")
 
   min_d = df["Data_dt"].min().date()
   max_d = df["Data_dt"].max().date()
@@ -281,10 +281,10 @@ elif menu == "🔍 Dettaglio Giornaliero":
   )
 
 # ==========================================
-# 3. DETTAGLIO & ESTREMI MENSILI (CON CONFRONTO STORICO)
+# 3. DATI GIORNALIERI
 # ==========================================
-elif menu == "📅 Dettaglio & Estremi Mensili":
-  st.header("Dettaglio & Estremi Mensili (con Confronto Storico)")
+elif menu == "📅 Dati Giornalieri":
+  st.header("Dati Giornalieri & Grafico con Confronto Storico")
 
   col1, col2 = st.columns(2)
   anni_disp = sorted(df["Data_dt"].dt.year.dropna().unique())
@@ -311,7 +311,6 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
   sel_mese_str = col2.selectbox("Seleziona Mese", list(mesi_dict.keys()))
   sel_mese_num = mesi_dict[sel_mese_str]
 
-  # CORRETTO: Chiusura corretta della parentesi tonda anziché quadra
   m_data = df[
       (df["Data_dt"].dt.year == sel_anno)
       & (df["Data_dt"].dt.month == sel_mese_num)
@@ -326,7 +325,6 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
     tmed_mean = m_data["Temperatura_Media_C"].mean()
     rain_sum = m_data["Pioggia_mm"].sum()
 
-    # Calcolo media storica per lo stesso mese su tutti gli anni disponibili
     hist_mese_data = df[df["Data_dt"].dt.month == sel_mese_num]
     hist_tmed_mean = hist_mese_data["Temperatura_Media_C"].mean()
     delta_tmed = tmed_mean - hist_tmed_mean
@@ -350,40 +348,67 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
     st.markdown("---")
     st.subheader("📱 Grafico Formato Instagram (4:5)")
     st.write(
-        "Generazione automatica di un grafico in formato verticale 4:5"
-        " ottimizzato per i post di Instagram."
+        "Confronto tra la temperatura media misurata e la media storica"
+        " giornaliera registrata negli anni precedenti nello stesso periodo."
     )
 
-    # Creazione grafico verticale formato 4:5
+    hist_prev = df[
+        (df["Data_dt"].dt.month == sel_mese_num)
+        & (df["Data_dt"].dt.year < sel_anno)
+    ]
+    if hist_prev.empty:
+      hist_prev = hist_mese_data
+
+    hist_daily_mean = (
+        hist_prev.groupby(hist_prev["Data_dt"].dt.day)["Temperatura_Media_C"]
+        .mean()
+        .reset_index()
+    )
+    hist_daily_mean.columns = ["Giorno", "Temp_Media_Storica"]
+
+    m_data_plot = m_data.copy()
+    m_data_plot["Giorno"] = m_data_plot["Data_dt"].dt.day
+    m_data_plot = pd.merge(
+        m_data_plot, hist_daily_mean, on="Giorno", how="left"
+    )
+
     fig, ax = plt.subplots(figsize=(6, 7.5), dpi=200)
     ax.plot(
-        m_data["Data_dt"].dt.day,
-        m_data["Temperatura_Max_C"],
-        label="Temp Max (°C)",
+        m_data_plot["Giorno"],
+        m_data_plot["Temperatura_Max_C"],
+        label="Temp Max Anno Corrente (°C)",
         color="#ff4b4b",
-        linewidth=2,
-        marker="o",
-        markersize=4,
-    )
-    ax.plot(
-        m_data["Data_dt"].dt.day,
-        m_data["Temperatura_Min_C"],
-        label="Temp Min (°C)",
-        color="#1c83e1",
-        linewidth=2,
-        marker="o",
-        markersize=4,
-    )
-    ax.plot(
-        m_data["Data_dt"].dt.day,
-        m_data["Temperatura_Media_C"],
-        label="Temp Media (°C)",
-        color="#2ca02c",
         linewidth=1.5,
+        alpha=0.7,
+    )
+    ax.plot(
+        m_data_plot["Giorno"],
+        m_data_plot["Temperatura_Min_C"],
+        label="Temp Min Anno Corrente (°C)",
+        color="#1c83e1",
+        linewidth=1.5,
+        alpha=0.7,
+    )
+    ax.plot(
+        m_data_plot["Giorno"],
+        m_data_plot["Temperatura_Media_C"],
+        label=f"Media Misurata {sel_anno} (°C)",
+        color="#2ca02c",
+        linewidth=2,
+        marker="o",
+        markersize=4,
+    )
+    ax.plot(
+        m_data_plot["Giorno"],
+        m_data_plot["Temp_Media_Storica"],
+        label="Media Storica (Anni Prec.) (°C)",
+        color="#ff7f0e",
+        linewidth=2,
         linestyle="--",
     )
+
     ax.set_title(
-        f"Meteo Monterotondo Scalo\n{sel_mese_str} {sel_anno}",
+        f"Confronto Temperatura Media\n{sel_mese_str} {sel_anno} vs Storico",
         fontsize=14,
         fontweight="bold",
         pad=15,
@@ -391,7 +416,7 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
     ax.set_xlabel("Giorno del mese", fontsize=10)
     ax.set_ylabel("Temperatura (°C)", fontsize=10)
     ax.grid(True, linestyle="--", alpha=0.5)
-    ax.legend(loc="upper right")
+    ax.legend(loc="upper right", fontsize=8)
 
     plt.tight_layout()
     st.pyplot(fig)
@@ -416,10 +441,10 @@ elif menu == "📅 Dettaglio & Estremi Mensili":
     )
 
 # ==========================================
-# 4. ESTREMI ANNUALI (CON CONFRONTO STORICO)
+# 4. DATI MENSILI
 # ==========================================
-elif menu == "📈 Estremi Annuali":
-  st.header("Estremi Annuali & Grafici Social")
+elif menu == "📈 Dati Mensili":
+  st.header("Dati Mensili & Grafici Social con Confronto Storico")
 
   temp_df = df.copy()
   temp_df["Anno"] = temp_df["Data_dt"].dt.year
@@ -456,13 +481,15 @@ elif menu == "📈 Estremi Annuali":
       f"💡 **Media storica generale (tutti gli anni):**"
       f" {overall_hist_tmed:.1f} °C"
   )
-  st.dataframe(
-      annual_df, use_container_width=True, hide_index=True
-  )
+  st.dataframe(annual_df, use_container_width=True, hide_index=True)
 
   if not annual_df.empty:
     st.markdown("---")
     st.subheader("📱 Grafico Annuale Formato Instagram (4:5)")
+    st.write(
+        "Confronto tra la temperatura media mensile misurata nell'anno"
+        " selezionato e la media storica mensile degli anni precedenti."
+    )
 
     sel_anno_grafico = st.selectbox(
         "Seleziona Anno per il Grafico Social", annual_df["Anno"].tolist()
@@ -481,7 +508,25 @@ elif menu == "📈 Estremi Annuali":
           .reset_index()
       )
 
-      # Grafico verticale 4:5
+      # Calcolo media storica mensile per gli anni precedenti (o fallback su tutti)
+      hist_prev_annuale = temp_df[temp_df["Anno"] < sel_anno_grafico]
+      if hist_prev_annuale.empty:
+        hist_prev_annuale = temp_df
+
+      hist_monthly_mean = (
+          hist_prev_annuale.groupby(hist_prev_annuale["Data_dt"].dt.month)[
+              "Temperatura_Media_C"
+          ]
+          .mean()
+          .reset_index()
+      )
+      hist_monthly_mean.columns = ["Data_dt", "Temp_Media_Storica"]
+
+      mensile_anno = pd.merge(
+          mensile_anno, hist_monthly_mean, on="Data_dt", how="left"
+      )
+
+      # Grafico verticale 4:5 con confronto storico
       fig_ann, ax_ann = plt.subplots(figsize=(6, 7.5), dpi=200)
       mesi_brevi = [
           "Gen",
@@ -502,37 +547,46 @@ elif menu == "📈 Estremi Annuali":
       ax_ann.plot(
           x_labels,
           mensile_anno["Temperatura_Max_C"],
-          label="Max Assoluta (°C)",
+          label="Max Assoluta Anno Corrente (°C)",
           color="#ff4b4b",
-          marker="o",
-          linewidth=2,
+          linewidth=1.5,
+          alpha=0.7,
       )
       ax_ann.plot(
           x_labels,
           mensile_anno["Temperatura_Min_C"],
-          label="Min Assoluta (°C)",
+          label="Min Assoluta Anno Corrente (°C)",
           color="#1c83e1",
-          marker="o",
-          linewidth=2,
+          linewidth=1.5,
+          alpha=0.7,
       )
       ax_ann.plot(
           x_labels,
           mensile_anno["Temperatura_Media_C"],
-          label=f"Media Anno {sel_anno_grafico}",
+          label=f"Media Misurata {sel_anno_grafico} (°C)",
           color="#2ca02c",
           marker="s",
           linewidth=2,
       )
+      ax_ann.plot(
+          x_labels,
+          mensile_anno["Temp_Media_Storica"],
+          label="Media Storica (Anni Prec.) (°C)",
+          color="#ff7f0e",
+          marker="o",
+          linewidth=2,
+          linestyle="--",
+      )
 
       ax_ann.set_title(
-          f"Trend Temperature - Anno {sel_anno_grafico}\nMonterotondo Scalo",
+          f"Confronto Temperatura Media Mensile\nAnno {sel_anno_grafico} vs Storico",
           fontsize=14,
           fontweight="bold",
           pad=15,
       )
       ax_ann.set_ylabel("Temperatura (°C)", fontsize=10)
       ax_ann.grid(True, linestyle="--", alpha=0.5)
-      ax_ann.legend(loc="upper right")
+      ax_ann.legend(loc="upper right", fontsize=8)
 
       plt.tight_layout()
       st.pyplot(fig_ann)
