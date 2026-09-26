@@ -98,12 +98,11 @@ elif menu == "📈 Confronto Giornaliero":
         else:
             df_target['Giorno'] = df_target['Data_dt'].dt.day
             
-            # Calcolo media storica dello stesso giorno negli altri anni
+           # Calcolo media storica dello stesso giorno negli altri anni
             df_storico = df[(df['Data_dt'].dt.month == m_num) & (df['Data_dt'].dt.year != sel_anno)].copy()
             if not df_storico.empty:
                 df_storico['Giorno'] = df_storico['Data_dt'].dt.day
                 storico_avg = df_storico.groupby('Giorno')['Temperatura_Media_C'].mean().reset_index()
-                storico_avg =órico_avg.rename(columns={'Temperatura_Media_C': 'Media_Storica'}) if 'órico_avg' not in locals() else storico_avg
                 storico_avg = storico_avg.rename(columns={'Temperatura_Media_C': 'Media_Storica'})
             else:
                 storico_avg = pd.DataFrame(columns=['Giorno', 'Media_Storica'])
