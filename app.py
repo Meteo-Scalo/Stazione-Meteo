@@ -1,7 +1,4 @@
 from datetime import datetime
-import hashlib
-import hmac
-import time
 import matplotlib.pyplot as plt
 import pandas as pd
 import requests
@@ -39,41 +36,13 @@ def load_data():
   return df
 
 
-# Funzione per recuperare la lista delle stazioni associate alle API Key (Diagnostica)
-def fetch_weatherlink_stations(api_key, api_secret):
-  if not api_key or not api_secret:
-    return None, "API Key o API Secret mancanti."
+# Funzione per recuperare i dati live da Weather Underground PWS API
+def fetch_wunderground_data(station_id, api_key):
+  if not station_id or not api_key:
+    return None, "Credenziali Weather Underground mancanti nei Secrets."
 
-  t = int(time.time())
-  data_str = f"api-key{api_key}t{t}"
-  signature = hmac.new(
-      api_secret.encode("utf-8"), data_str.encode("utf-8"), hashlib.sha256
-  ).hexdigest()
-
-  url = f"https://api.weatherlink.com/v2/stations?api-key={api_key}&t={t}&api-signature={signature}"
-
-  try:
-    response = requests.get(url, timeout=10)
-    if response.status_code == 200:
-      return response.json(), "OK"
-    else:
-      return None, f"Errore HTTP {response.status_code}: {response.text}"
-  except Exception as e:
-    return None, f"Errore di connessione: {str(e)}"
-
-
-# Funzione per recuperare i dati live da WeatherLink API v2
-def fetch_weatherlink_data(station_id, api_key, api_secret):
-  if not station_id or not api_key or not api_secret:
-    return None, "Credenziali mancanti nei Secrets."
-
-  t = int(time.time())
-  data_str = f"api-key{api_key}t{t}"
-  signature = hmac.new(
-      api_secret.encode("utf-8"), data_str.encode("utf-8"), hashlib.sha256
-  ).hexdigest()
-
-  url = f"https://api.weatherlink.com/v2/current/{station_id}?api-key={api_key}&t={t}&api-signature={signature}"
+  # Endpoint ufficiale Weather Underground PWS per osservazioni correnti (unità metriche = m)
+  url = f"https://api.weather.com/v2/pws/observations/current?stationId={station_id}&format=json&units=m&apiKey={api_key}"
 
   try:
     response = requests.get(url, timeout=10)
@@ -102,15 +71,13 @@ menu = st.sidebar.radio(
     ],
 )
 
-# Lettura sicura delle credenziali dai Secrets di Streamlit
+# Lettura sicura delle credenziali Weather Underground dai Secrets di Streamlit
 try:
-  wl_station_id = str(st.secrets["weatherlink"]["station_id"])
-  wl_api_key = st.secrets["weatherlink"]["api_key"]
-  wl_api_secret = st.secrets["weatherlink"]["api_secret"]
+  wu_station_id = str(st.secrets["wunderground"]["station_id"])
+  wu_api_key = str(st.secrets["wunderground"]["api_key"])
 except Exception:
-  wl_station_id = ""
-  wl_api_key = ""
-  wl_api_secret = ""
+  wu_station_id = ""
+  wu_api_key = ""
 
 if df.empty:
   st.warning(
@@ -127,75 +94,44 @@ else:
 if menu == "📊 Dashboard & Record Mensili":
   st.header("Dashboard: Condizioni Live e Record Mensili")
 
-  # Sezione Dati Live WeatherLink (Sopra la tabella dei record)
-  st.markdown("### 🔴 Dati in Tempo Reale (WeatherLink)")
-  if wl_station_id and wl_api_key and wl_api_secret:
-    wl_data, err_msg = fetch_weatherlink_data(
-        wl_station_id, wl_api_key, wl_api_secret
-    )
-    if wl_data and "sensors" in wl_data:
+  # Sezione Dati Live Weather Underground (Sopra la tabella dei record)
+  st.markdown("### 🔴 Dati in Tempo Reale (Weather Underground)")
+  if wu_station_id and wu_api_key:
+    wu_data, err_msg = fetch_wunderground_data(wu_station_id, wu_api_key)
+    if (
+        wu_data
+        and "observations" in wu_data
+        and len(wu_data["observations"]) > 0
+    ):
       try:
-        temp_val = "N.D."
-        hum_val = "N.D."
-        rain_val = "N.D."
+        obs = wu_data["observations"][0]
+        metric = obs.get("metric", {})
 
-        for sensor in wl_data["sensors"]:
-          data_list = sensor.get("data", [])
-          for item in data_list:
-            if "temp" in item and temp_val == "N.D.":
-              t_f = item.get("temp")
-              if t_f is not None:
-                temp_val = f"{t_f:.1f}"
-            if "hum" in item and hum_val == "N.D.":
-              hum_val = f"{item.get('hum')}"
-            if (
-                "rain_day_mm" in item or "rainfall_daily_mm" in item
-            ) and rain_val == "N.D.":
-              rain_val = f"{item.get('rain_day_mm', item.get('rainfall_daily_mm', 0)):.1f}"
+        temp_val = metric.get("temp", "N.D.")
+        hum_val = obs.get("humidity", "N.D.")
+        rain_val = metric.get("precipTotal", 0.0)
 
         col_l1, col_l2, col_l3, col_l4 = st.columns(4)
         col_l1.metric(
             "Temperatura Attuale",
-            f"{temp_val} °C" if temp_val != "N.D." else "N.D.",
+            f"{temp_val:.1f} °C" if temp_val != "N.D." else "N.D.",
         )
         col_l2.metric(
             "Umidità", f"{hum_val} %" if hum_val != "N.D." else "N.D."
         )
-        col_l3.metric(
-            "Pioggia Odierna",
-            f"{rain_val} mm" if rain_val != "N.D." else "0.0 mm",
-        )
+        col_l3.metric("Pioggia Odierna", f"{rain_val:.1f} mm")
         col_l4.metric("Stato", "Connesso ✅")
       except Exception as e:
-        st.warning(f"Errore nell'elaborazione dei dati dei sensori: {e}")
+        st.warning(f"Errore nell'elaborazione dei dati meteo: {e}")
     else:
       st.error(
-          f"Impossibile recuperare i dati da WeatherLink. Dettaglio: {err_msg}"
+          "Impossibile recuperare i dati da Weather Underground. Dettaglio:"
+          f" {err_msg}"
       )
-
-      # Riquadro di diagnostica per scoprire l'ID corretto
-      with st.expander(
-          "🔍 Trova Station ID Corretto (Strumento Diagnostica)"
-      ):
-        st.write(
-            "Tentativo di interrogare l'elenco delle stazioni associate alle tue"
-            " chiavi..."
-        )
-        stations_res, stations_err = fetch_weatherlink_stations(
-            wl_api_key, wl_api_secret
-        )
-        if stations_res and "stations" in stations_res:
-          st.success("Connessione alle API riuscita!")
-          st.json(stations_res["stations"])
-        else:
-          st.error(
-              f"Impossibile leggere l'elenco delle stazioni. Dettaglio:"
-              f" {stations_err}"
-          )
   else:
     st.info(
-        "💡 Configura le credenziali WeatherLink (`station_id`, `api_key`,"
-        " `api_secret`) nei Secrets di Streamlit."
+        "💡 Configura le credenziali Weather Underground (`station_id` e"
+        " `api_key`) nella sezione [wunderground] dei Secrets di Streamlit."
     )
 
   st.markdown("---")
@@ -460,7 +396,7 @@ elif menu == "➕ Inserisci Misura":
         )
         conn.commit()
         conn.close()
-        str.cache_data.clear() if hasattr(st, "cache_data") else None
+        st.cache_data.clear()
         st.success("Misura registrata con successo nel database!")
       except Exception as e:
         st.error(f"Errore durante il salvataggio: {e}")
