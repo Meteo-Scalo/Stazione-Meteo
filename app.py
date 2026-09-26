@@ -115,7 +115,7 @@ if menu == "📊 Dashboard & Record Mensili":
         temp_raw = metric.get("temp")
         hum_val = obs.get("humidity", "N.D.")
         pressure_raw = metric.get("pressure", "N.D.")
-        rain_val = metric.get("precipTotal", 0.0)
+        rain_val = obs.get("precipTotal", 0.0)
         obs_time = obs.get("obsTimeLocal", "Aggiornato di recente")
 
         # Conversione e formattazione sicura della temperatura con 1 decimale
@@ -286,12 +286,22 @@ elif menu == "🔍 Consultazione Database":
 elif menu == "📅 Dati Giornalieri":
   st.header("Dati Giornalieri & Grafico con Confronto Storico")
 
+  current_year = datetime.now().year
+  current_month = datetime.now().month
+
   col1, col2 = st.columns(2)
   anni_disp = sorted(df["Data_dt"].dt.year.dropna().unique())
+
+  # Default su anno corrente se disponibile
+  default_anno_idx = (
+      anni_disp.index(current_year)
+      if current_year in anni_disp
+      else (len(anni_disp) - 1 if anni_disp else 0)
+  )
   sel_anno = (
-      col1.selectbox("Seleziona Anno", anni_disp)
+      col1.selectbox("Seleziona Anno", anni_disp, index=default_anno_idx)
       if anni_disp
-      else datetime.now().year
+      else current_year
   )
 
   mesi_dict = {
@@ -308,7 +318,15 @@ elif menu == "📅 Dati Giornalieri":
       "Novembre": 11,
       "Dicembre": 12,
   }
-  sel_mese_str = col2.selectbox("Seleziona Mese", list(mesi_dict.keys()))
+  mesi_list = list(mesi_dict.keys())
+  default_mese_name = [k for k, v in mesi_dict.items() if v == current_month][0]
+  default_mese_idx = (
+      mesi_list.index(default_mese_name) if default_mese_name in mesi_list else 0
+  )
+
+  sel_mese_str = col2.selectbox(
+      "Seleziona Mese", mesi_list, index=default_mese_idx
+  )
   sel_mese_num = mesi_dict[sel_mese_str]
 
   m_data = df[
@@ -346,7 +364,7 @@ elif menu == "📅 Dati Giornalieri":
     )
 
     st.markdown("---")
-    st.subheader("📱 Grafico Formato Instagram (4:5)")
+    st.subheader("📱 Grafico Compatto (Confronto Medie)")
     st.write(
         "Confronto tra la temperatura media misurata e la media storica"
         " giornaliera registrata negli anni precedenti nello stesso periodo."
@@ -372,36 +390,36 @@ elif menu == "📅 Dati Giornalieri":
         m_data_plot, hist_daily_mean, on="Giorno", how="left"
     )
 
-    fig, ax = plt.subplots(figsize=(6, 7.5), dpi=200)
-    # Rimosse le curve max e min, mantenute solo le medie
+    # Dimensioni grafiche ridotte per evitare scrolling eccessivo
+    fig, ax = plt.subplots(figsize=(5, 3.5), dpi=150)
     ax.plot(
         m_data_plot["Giorno"],
         m_data_plot["Temperatura_Media_C"],
         label=f"Media Misurata {sel_anno} (°C)",
         color="#2ca02c",
-        linewidth=2,
+        linewidth=1.8,
         marker="o",
-        markersize=4,
+        markersize=3,
     )
     ax.plot(
         m_data_plot["Giorno"],
         m_data_plot["Temp_Media_Storica"],
         label="Media Storica (Anni Prec.) (°C)",
         color="#ff7f0e",
-        linewidth=2,
+        linewidth=1.8,
         linestyle="--",
     )
 
     ax.set_title(
         f"Confronto Temperatura Media\n{sel_mese_str} {sel_anno} vs Storico",
-        fontsize=14,
+        fontsize=11,
         fontweight="bold",
-        pad=15,
+        pad=10,
     )
-    ax.set_xlabel("Giorno del mese", fontsize=10)
-    ax.set_ylabel("Temperatura (°C)", fontsize=10)
+    ax.set_xlabel("Giorno del mese", fontsize=9)
+    ax.set_ylabel("Temperatura (°C)", fontsize=9)
     ax.grid(True, linestyle="--", alpha=0.5)
-    ax.legend(loc="upper right", fontsize=8)
+    ax.legend(loc="upper right", fontsize=7)
 
     plt.tight_layout()
     st.pyplot(fig)
@@ -411,7 +429,7 @@ elif menu == "📅 Dati Giornalieri":
     buf.seek(0)
 
     st.download_button(
-        label="📥 Scarica Grafico per Instagram (PNG 4:5)",
+        label="📥 Scarica Grafico Compatto (PNG)",
         data=buf,
         file_name=f"meteo_{sel_mese_str}_{sel_anno}.png",
         mime="image/png",
@@ -429,8 +447,9 @@ elif menu == "📅 Dati Giornalieri":
 # 4. DATI MENSILI
 # ==========================================
 elif menu == "📈 Dati Mensili":
-  st.header("Dati Mensili & Grafici Social con Confronto Storico")
+  st.header("Dati Mensili & Grafici con Confronto Storico")
 
+  current_year = datetime.now().year
   temp_df = df.copy()
   temp_df["Anno"] = temp_df["Data_dt"].dt.year
   overall_hist_tmed = temp_df["Temperatura_Media_C"].mean()
@@ -470,14 +489,23 @@ elif menu == "📈 Dati Mensili":
 
   if not annual_df.empty:
     st.markdown("---")
-    st.subheader("📱 Grafico Annuale Formato Instagram (4:5)")
+    st.subheader("📱 Grafico Annuale Compatto")
     st.write(
         "Confronto tra la temperatura media mensile misurata nell'anno"
         " selezionato e la media storica mensile degli anni precedenti."
     )
 
+    anni_disponibili = annual_df["Anno"].tolist()
+    default_grafico_idx = (
+        anni_disponibili.index(current_year)
+        if current_year in anni_disponibili
+        else (len(anni_disponibili) - 1 if anni_disponibili else 0)
+    )
+
     sel_anno_grafico = st.selectbox(
-        "Seleziona Anno per il Grafico Social", annual_df["Anno"].tolist()
+        "Seleziona Anno per il Grafico",
+        anni_disponibili,
+        index=default_grafico_idx,
     )
     anno_data = temp_df[temp_df["Anno"] == sel_anno_grafico]
 
@@ -510,8 +538,8 @@ elif menu == "📈 Dati Mensili":
           mensile_anno, hist_monthly_mean, on="Data_dt", how="left"
       )
 
-      # Grafico verticale 4:5 con confronto storico (solo medie)
-      fig_ann, ax_ann = plt.subplots(figsize=(6, 7.5), dpi=200)
+      # Dimensioni grafiche ridotte per l'anno
+      fig_ann, ax_ann = plt.subplots(figsize=(5, 3.5), dpi=150)
       mesi_brevi = [
           "Gen",
           "Feb",
@@ -534,7 +562,8 @@ elif menu == "📈 Dati Mensili":
           label=f"Media Misurata {sel_anno_grafico} (°C)",
           color="#2ca02c",
           marker="s",
-          linewidth=2,
+          linewidth=1.8,
+          markersize=4,
       )
       ax_ann.plot(
           x_labels,
@@ -542,19 +571,20 @@ elif menu == "📈 Dati Mensili":
           label="Media Storica (Anni Prec.) (°C)",
           color="#ff7f0e",
           marker="o",
-          linewidth=2,
+          linewidth=1.8,
+          markersize=4,
           linestyle="--",
       )
 
       ax_ann.set_title(
           f"Confronto Temperatura Media Mensile\nAnno {sel_anno_grafico} vs Storico",
-          fontsize=14,
+          fontsize=11,
           fontweight="bold",
-          pad=15,
+          pad=10,
       )
-      ax_ann.set_ylabel("Temperatura (°C)", fontsize=10)
+      ax_ann.set_ylabel("Temperatura (°C)", fontsize=9)
       ax_ann.grid(True, linestyle="--", alpha=0.5)
-      ax_ann.legend(loc="upper right", fontsize=8)
+      ax_ann.legend(loc="upper right", fontsize=7)
 
       plt.tight_layout()
       st.pyplot(fig_ann)
@@ -564,7 +594,7 @@ elif menu == "📈 Dati Mensili":
       buf_ann.seek(0)
 
       st.download_button(
-          label=f"📥 Scarica Grafico Anno {sel_anno_grafico} per Instagram (PNG 4:5)",
+          label=f"📥 Scarica Grafico Anno {sel_anno_grafico} (PNG)",
           data=buf_ann,
           file_name=f"meteo_anno_{sel_anno_grafico}.png",
           mime="image/png",
