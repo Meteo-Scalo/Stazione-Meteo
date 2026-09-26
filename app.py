@@ -7,7 +7,7 @@ from datetime import datetime
 # Nome del database SQLite condiviso
 DB_NAME = "meteo_database.db"
 
-st.set_page_config(page_title="Stazione Meteo Amatoriale Monterotondo Scalo", layout="wide", page_icon="🌦️")
+st.set_page_config(page_title="Stazione meteo amatoriale di Monterotondo Scalo", layout="wide", page_icon="🌦️")
 
 # Funzione per connettersi e caricare i dati dal database
 @st.cache_data(ttl=30)
@@ -22,11 +22,11 @@ def load_data():
         df['Data_dt'] = pd.to_datetime(df['Data'], errors='coerce')
     return df
 
-st.title("🌦️ Gestore Statistiche Meteo (Versione Web)")
+st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
 
 df = load_data()
 
-# Menu laterale con tutte le voci sempre visibili (usando radio anziché selectbox)
+# Menu laterale con tutte le voci sempre visibili
 menu = st.sidebar.radio("Menu Principale", [
     "📊 Dashboard & Record Mensili",
     "🔍 Dettaglio Giornaliero",
