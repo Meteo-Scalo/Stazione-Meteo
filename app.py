@@ -96,7 +96,7 @@ if os.path.exists(image_filename):
     img = Image.open(image_filename)
     w, h = img.size
     new_h = int(h * 0.55)
-    top = 0  # Taglia partendo dall'alto
+    top = 0
     img_cropped = img.crop((0, top, w, top + new_h))
     st.image(img_cropped, use_container_width=True)
   except Exception:
@@ -154,7 +154,6 @@ else:
 # 1. DASHBOARD
 # ==========================================
 if menu == "📊 Dashboard":
-  # Verifica preliminare dello stato online
   is_online = False
   wu_data, err_msg = None, "Credenziali mancanti"
   if wu_station_id and wu_api_key:
@@ -162,7 +161,6 @@ if menu == "📊 Dashboard":
     if wu_data and "observations" in wu_data and len(wu_data["observations"]) > 0:
       is_online = True
 
-  # Titolo e indicatore di stato affiancati e centrati
   status_badge = "🟢 Online" if is_online else "🔴 Offline"
   st.markdown(
       f"""
@@ -210,7 +208,6 @@ if menu == "📊 Dashboard":
       except (ValueError, TypeError):
         pressure_val = "N.D."
 
-      # Gestione storico pressione per il trend a 3 ore
       if "pressure_history" not in st.session_state:
         st.session_state["pressure_history"] = []
 
@@ -223,7 +220,6 @@ if menu == "📊 Dashboard":
         st.session_state["pressure_history"].append(
             (current_time, current_pressure)
         )
-
         three_hours_ago = current_time - timedelta(hours=3)
         st.session_state["pressure_history"] = [
             (t, p)
@@ -244,7 +240,6 @@ if menu == "📊 Dashboard":
       else:
         press_trend_str = "Stabile ➡️"
 
-      # 6 metriche distribuite su un'unica riga
       col_l1, col_l2, col_l3, col_l4, col_l5, col_l6 = st.columns(6)
       with col_l1:
         st.metric(label="🌡️ Temperatura", value=temp_val)
@@ -314,23 +309,30 @@ if menu == "📊 Dashboard":
   temp_df["Mese_Num"] = temp_df["Data_dt"].dt.month
 
   table_data = []
-
   for m_num in range(1, 13):
     m_data = temp_df[temp_df["Mese_Num"] == m_num]
     if not m_data.empty:
-      top2_max = m_data.nlargest(2, "Temperatura_Max_C")
+      # Conversione sicura per evitare crash nella ricerca dei massimi/minimi
+      tmax_ser = pd.to_numeric(m_data["Temperatura_Max_C"], errors="coerce")
+      tmin_ser = pd.to_numeric(m_data["Temperatura_Min_C"], errors="coerce")
+
+      m_data_clean = m_data.copy()
+      m_data_clean["T_Max_Num"] = tmax_ser
+      m_data_clean["T_Min_Num"] = tmin_ser
+
+      top2_max = m_data_clean.nlargest(2, "T_Max_Num")
       max_str_list = []
       for _, r in top2_max.iterrows():
         max_str_list.append(
-            f"{r['Temperatura_Max_C']:.1f} °C ({str(r['Data']).split()[0]})"
+            f"{r['Temperatura_Max_C']} °C ({str(r['Data']).split()[0]})"
         )
       max_str = " | ".join(max_str_list)
 
-      bot2_min = m_data.nsmallest(2, "Temperatura_Min_C")
+      bot2_min = m_data_clean.nsmallest(2, "T_Min_Num")
       min_str_list = []
       for _, r in bot2_min.iterrows():
         min_str_list.append(
-            f"{r['Temperatura_Min_C']:.1f} °C ({str(r['Data']).split()[0]})"
+            f"{r['Temperatura_Min_C']} °C ({str(r['Data']).split()[0]})"
         )
       min_str = " | ".join(min_str_list)
 
@@ -358,25 +360,28 @@ if menu == "📊 Dashboard":
     )
 
   if not temp_df.empty:
-    abs_max_idx = temp_df["Temperatura_Max_C"].idxmax()
+    temp_df["T_Max_Num"] = pd.to_numeric(
+        temp_df["Temperatura_Max_C"], errors="coerce"
+    )
+    temp_df["T_Min_Num"] = pd.to_numeric(
+        temp_df["Temperatura_Min_C"], errors="coerce"
+    )
+
+    abs_max_idx = temp_df["T_Max_Num"].idxmax()
     abs_max_val = temp_df.loc[abs_max_idx, "Temperatura_Max_C"]
     abs_max_date = str(temp_df.loc[abs_max_idx, "Data"]).split()[0]
 
-    abs_min_idx = temp_df["Temperatura_Min_C"].idxmin()
+    abs_min_idx = temp_df["T_Min_Num"].idxmin()
     abs_min_val = temp_df.loc[abs_min_idx, "Temperatura_Min_C"]
     abs_min_date = str(temp_df.loc[abs_min_idx, "Data"]).split()[0]
 
     st.markdown("### 🌟 Record Assoluti Generali")
     col_a, col_b = st.columns(2)
     col_a.metric(
-        "Temperatura Max Assoluta",
-        f"{abs_max_val:.1f} °C",
-        f"Data: {abs_max_date}",
+        "Temperatura Max Assoluta", f"{abs_max_val} °C", f"Data: {abs_max_date}"
     )
     col_b.metric(
-        "Temperatura Min Assoluta",
-        f"{abs_min_val:.1f} °C",
-        f"Data: {abs_min_date}",
+        "Temperatura Min Assoluta", f"{abs_min_val} °C", f"Data: {abs_min_date}"
     )
 
 # ==========================================
@@ -397,13 +402,13 @@ elif menu == "🔍 Consultazione Database":
       & (df["Data_dt"].dt.date <= end_date)
   ]
   st.dataframe(
-      filtered_df.drop(columns=["Data_dt"], errors="ignore"),
+      filtered_df.drop(columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"),
       use_container_width=True,
       hide_index=True,
   )
 
 # ==========================================
-# 3. DATI GIORNALIERI
+# 3. DATI GIORNALIERI (CON DIAGNOSTICA ERRORI)
 # ==========================================
 elif menu == "📅 Dati Giornalieri":
   st.header("Dati Giornalieri & Grafico con Confronto Storico")
@@ -461,41 +466,84 @@ elif menu == "📅 Dati Giornalieri":
     st.subheader(f"📊 Riepilogo Estremi - {sel_mese_str} {sel_anno}")
 
     # =========================================================================
-    # RIGA DI DIAGNOSTICA / SCOVA-ERRORI:
-    # Mostra a schermo se ci sono valori non numerici (es. testo, vuoti, virgole)
-    # in modo da individuare subito quale riga del DB sta bloccando il calcolo.
+    # BLOCCO DI DIAGNOSTICA SCOVA-ERRORI:
+    # Controlla se ci sono righe con valori non numerici in questo mese
     # =========================================================================
-    invalid_rows = m_data[
-        pd.to_numeric(m_data["Pioggia_mm"], errors="coerce").isna()
-        | pd.to_numeric(m_data["Temperatura_Max_C"], errors="coerce").isna()
+    numeric_cols_check = [
+        "Temperatura_Min_C",
+        "Temperatura_Max_C",
+        "Temperatura_Media_C",
+        "Pioggia_mm",
     ]
-    if not invalid_rows.empty:
-      st.error(
-          "⚠️ **Attenzione:** Trovate righe con valori non numerici nel"
-          " database per questo mese! Controlla i dati sottostanti:"
-      )
-      st.dataframe(invalid_rows[["Data", "Temperatura_Max_C", "Pioggia_mm"]])
+    bad_rows_list = []
+    for col in numeric_cols_check:
+      if col in m_data.columns:
+        converted = pd.to_numeric(m_data[col], errors="coerce")
+        mask_err = converted.isna() & m_data[col].notna() & (m_data[col] != "")
+        if mask_err.any():
+          bad_rows_list.append(m_data[mask_err])
 
-    # Calcolo standard rigoroso (se c'è un valore non numerico, fallirà qui facendoti vedere l'errore)
-    tmax_max = m_data["Temperatura_Max_C"].max()
-    tmin_min = m_data["Temperatura_Min_C"].min()
-    tmed_mean = m_data["Temperatura_Media_C"].mean()
-    rain_sum = m_data["Pioggia_mm"].sum()
+    if bad_rows_list:
+      bad_df = pd.concat(bad_rows_list).drop_duplicates()
+      st.error(
+          "🚨 **ERRORE NEL DATABASE TROVATO!** Le seguenti righe contengono"
+          " valori non numerici (es. testo, spazi, caratteri strani) che"
+          " bloccano i calcoli. Correggile nel database:"
+      )
+      st.dataframe(
+          bad_df[
+              [
+                  "Data",
+                  "Temperatura_Min_C",
+                  "Temperatura_Max_C",
+                  "Temperatura_Media_C",
+                  "Pioggia_mm",
+              ]
+          ],
+          use_container_width=True,
+      )
+
+    # Conversione sicura per il calcolo delle metriche e grafici senza crash
+    tmax_max = pd.to_numeric(m_data["Temperatura_Max_C"], errors="coerce").max()
+    tmin_min = pd.to_numeric(m_data["Temperatura_Min_C"], errors="coerce").min()
+    tmed_mean = pd.to_numeric(
+        m_data["Temperatura_Media_C"], errors="coerce"
+    ).mean()
+    rain_sum = pd.to_numeric(m_data["Pioggia_mm"], errors="coerce").sum()
 
     hist_mese_data = df[df["Data_dt"].dt.month == sel_mese_num]
-    hist_tmed_mean = hist_mese_data["Temperatura_Media_C"].mean()
-    delta_tmed = tmed_mean - hist_tmed_mean if not pd.isna(hist_tmed_mean) else 0.0
+    hist_tmed_mean = pd.to_numeric(
+        hist_mese_data["Temperatura_Media_C"], errors="coerce"
+    ).mean()
+    delta_tmed = (
+        tmed_mean - hist_tmed_mean
+        if not pd.isna(hist_tmed_mean) and not pd.isna(tmed_mean)
+        else 0.0
+    )
 
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Temp Max Assoluta", f"{tmax_max:.1f} °C")
-    c2.metric("Temp Min Assoluta", f"{tmin_min:.1f} °C")
+    c1.metric(
+        "Temp Max Assoluta",
+        f"{tmax_max:.1f} °C" if not pd.isna(tmax_max) else "N.D.",
+    )
+    c2.metric(
+        "Temp Min Assoluta",
+        f"{tmin_min:.1f} °C" if not pd.isna(tmin_min) else "N.D.",
+    )
     c3.metric(
         "Temp Media Mese",
-        f"{tmed_mean:.1f} °C",
-        delta=f"{delta_tmed:+.1f} °C vs storica",
+        f"{tmed_mean:.1f} °C" if not pd.isna(tmed_mean) else "N.D.",
+        delta=(
+            f"{delta_tmed:+.1f} °C vs storica"
+            if not pd.isna(tmed_mean)
+            else None
+        ),
         delta_color="inverse",
     )
-    c4.metric("Pioggia Totale", f"{rain_sum:.1f} mm")
+    c4.metric(
+        "Pioggia Totale",
+        f"{rain_sum:.1f} mm" if not pd.isna(rain_sum) else "0.0 mm",
+    )
 
     st.caption(
         f"💡 Media storica di {sel_mese_str} calcolata sul totale degli anni:"
@@ -520,8 +568,12 @@ elif menu == "📅 Dati Giornalieri":
     if hist_prev.empty:
       hist_prev = hist_mese_data
 
+    # Pulizia temporanea per i gruppi storici
+    hist_prev["T_Med_Num"] = pd.to_numeric(
+        hist_prev["Temperatura_Media_C"], errors="coerce"
+    )
     hist_daily_mean = (
-        hist_prev.groupby(hist_prev["Data_dt"].dt.day)["Temperatura_Media_C"]
+        hist_prev.groupby(hist_prev["Data_dt"].dt.day)["T_Med_Num"]
         .mean()
         .reset_index()
     )
@@ -529,6 +581,13 @@ elif menu == "📅 Dati Giornalieri":
 
     m_data_plot = m_data.copy()
     m_data_plot["Giorno"] = m_data_plot["Data_dt"].dt.day
+    m_data_plot["T_Med_Num"] = pd.to_numeric(
+        m_data_plot["Temperatura_Media_C"], errors="coerce"
+    )
+    m_data_plot["Rain_Num"] = pd.to_numeric(
+        m_data_plot["Pioggia_mm"], errors="coerce"
+    )
+
     m_data_plot = pd.merge(
         m_data_plot, hist_daily_mean, on="Giorno", how="left"
     )
@@ -539,7 +598,7 @@ elif menu == "📅 Dati Giornalieri":
 
     ax1.plot(
         m_data_plot["Giorno"],
-        m_data_plot["Temperatura_Media_C"],
+        m_data_plot["T_Med_Num"],
         label=f"Media Misurata {sel_anno} (°C)",
         color="#2ca02c",
         linewidth=1.8,
@@ -566,7 +625,7 @@ elif menu == "📅 Dati Giornalieri":
 
     ax2.bar(
         m_data_plot["Giorno"],
-        m_data_plot["Pioggia_mm"],
+        m_data_plot["Rain_Num"],
         label="Pioggia (mm)",
         color="#1c83e1",
         alpha=0.8,
@@ -594,7 +653,7 @@ elif menu == "📅 Dati Giornalieri":
 
     st.subheader("📋 Tutte le misurazioni del mese")
     st.dataframe(
-        m_data.drop(columns=["Data_dt"], errors="ignore"),
+        m_data.drop(columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"),
         use_container_width=True,
         hide_index=True,
     )
@@ -608,32 +667,41 @@ elif menu == "📈 Dati Mensili":
   current_year = datetime.now().year
   temp_df = df.copy()
   temp_df["Anno"] = temp_df["Data_dt"].dt.year
-  overall_hist_tmed = temp_df["Temperatura_Media_C"].mean()
+  temp_df["T_Med_Num"] = pd.to_numeric(
+      temp_df["Temperatura_Media_C"], errors="coerce"
+  )
+  overall_hist_tmed = temp_df["T_Med_Num"].mean()
 
   annual_list = []
   for anno, group in temp_df.groupby("Anno"):
     if group.empty:
       continue
-    max_idx = group["Temperatura_Max_C"].idxmax()
-    max_val = group.loc[max_idx, "Temperatura_Max_C"]
-    max_date = str(group.loc[max_idx, "Data"]).split()[0]
 
-    min_idx = group["Temperatura_Min_C"].idxmin()
-    min_val = group.loc[min_idx, "Temperatura_Min_C"]
-    min_date = str(group.loc[min_idx, "Data"]).split()[0]
+    g_max = pd.to_numeric(group["Temperatura_Max_C"], errors="coerce")
+    g_min = pd.to_numeric(group["Temperatura_Min_C"], errors="coerce")
+    g_med = pd.to_numeric(group["Temperatura_Media_C"], errors="coerce")
+    g_rain = pd.to_numeric(group["Pioggia_mm"], errors="coerce")
 
-    ann_tmed = group["Temperatura_Media_C"].mean()
-    rain_sum = group["Pioggia_mm"].sum()
+    max_idx = g_max.idxmax() if not g_max.dropna().empty else None
+    max_val = group.loc[max_idx, "Temperatura_Max_C"] if max_idx is not None else "N.D."
+    max_date = str(group.loc[max_idx, "Data"]).split()[0] if max_idx is not None else ""
+
+    min_idx = g_min.idxmin() if not g_min.dropna().empty else None
+    min_val = group.loc[min_idx, "Temperatura_Min_C"] if min_idx is not None else "N.D."
+    min_date = str(group.loc[min_idx, "Data"]).split()[0] if min_idx is not None else ""
+
+    ann_tmed = g_med.mean()
+    rain_sum = g_rain.sum()
 
     annual_list.append({
         "Anno": int(anno),
-        "Temp Max Assoluta (°C)": f"{max_val:.1f}",
+        "Temp Max Assoluta (°C)": str(max_val),
         "Data Max": max_date,
-        "Temp Min Assoluta (°C)": f"{min_val:.1f}",
+        "Temp Min Assoluta (°C)": str(min_val),
         "Data Min": min_date,
-        "Temp Media (°C)": f"{ann_tmed:.1f}",
-        "vs Storica (°C)": f"{(ann_tmed - overall_hist_tmed):+.1f}",
-        "Pioggia Totale (mm)": f"{rain_sum:.1f}",
+        "Temp Media (°C)": f"{ann_tmed:.1f}" if not pd.isna(ann_tmed) else "N.D.",
+        "vs Storica (°C)": f"{(ann_tmed - overall_hist_tmed):+.1f}" if not pd.isna(ann_tmed) and not pd.isna(overall_hist_tmed) else "0.0",
+        "Pioggia Totale (mm)": f"{rain_sum:.1f}" if not pd.isna(rain_sum) else "0.0",
     })
 
   annual_df = pd.DataFrame(annual_list)
@@ -671,13 +739,27 @@ elif menu == "📈 Dati Mensili":
     anno_data = temp_df[temp_df["Anno"] == sel_anno_grafico]
 
     if not anno_data.empty:
+      anno_data_clean = anno_data.copy()
+      anno_data_clean["T_Max_Num"] = pd.to_numeric(
+          anno_data_clean["Temperatura_Max_C"], errors="coerce"
+      )
+      anno_data_clean["T_Min_Num"] = pd.to_numeric(
+          anno_data_clean["Temperatura_Min_C"], errors="coerce"
+      )
+      anno_data_clean["T_Med_Num"] = pd.to_numeric(
+          anno_data_clean["Temperatura_Media_C"], errors="coerce"
+      )
+      anno_data_clean["Rain_Num"] = pd.to_numeric(
+          anno_data_clean["Pioggia_mm"], errors="coerce"
+      )
+
       mensile_anno = (
-          anno_data.groupby(anno_data["Data_dt"].dt.month)
+          anno_data_clean.groupby(anno_data_clean["Data_dt"].dt.month)
           .agg({
-              "Temperatura_Max_C": "max",
-              "Temperatura_Min_C": "min",
-              "Temperatura_Media_C": "mean",
-              "Pioggia_mm": "sum",
+              "T_Max_Num": "max",
+              "T_Min_Num": "min",
+              "T_Med_Num": "mean",
+              "Rain_Num": "sum",
           })
           .reset_index()
       )
@@ -688,7 +770,7 @@ elif menu == "📈 Dati Mensili":
 
       hist_monthly_mean = (
           hist_prev_annuale.groupby(hist_prev_annuale["Data_dt"].dt.month)[
-              "Temperatura_Media_C"
+              "T_Med_Num"
           ]
           .mean()
           .reset_index()
@@ -720,7 +802,7 @@ elif menu == "📈 Dati Mensili":
 
       ax1_ann.plot(
           x_labels,
-          mensile_anno["Temperatura_Media_C"],
+          mensile_anno["T_Med_Num"],
           label=f"Media Misurata {sel_anno_grafico} (°C)",
           color="#2ca02c",
           marker="s",
@@ -749,7 +831,7 @@ elif menu == "📈 Dati Mensili":
 
       ax2_ann.bar(
           x_labels,
-          mensile_anno["Pioggia_mm"],
+          mensile_anno["Rain_Num"],
           label="Pioggia Totale (mm)",
           color="#1c83e1",
           alpha=0.8,
@@ -787,9 +869,14 @@ elif menu == "📊 Grafici Annuali":
 
   temp_df = df.copy()
   temp_df["Anno"] = temp_df["Data_dt"].dt.year
+  temp_df["T_Med_Num"] = pd.to_numeric(
+      temp_df["Temperatura_Media_C"], errors="coerce"
+  )
+  temp_df["Rain_Num"] = pd.to_numeric(temp_df["Pioggia_mm"], errors="coerce")
+
   annuale_globale = (
       temp_df.groupby("Anno")
-      .agg({"Temperatura_Media_C": "mean", "Pioggia_mm": "sum"})
+      .agg({"T_Med_Num": "mean", "Rain_Num": "sum"})
       .reset_index()
   )
 
@@ -802,7 +889,7 @@ elif menu == "📊 Grafici Annuali":
 
     ax1_g.plot(
         annuale_globale["Anno"],
-        annuale_globale["Temperatura_Media_C"],
+        annuale_globale["T_Med_Num"],
         label="Temperatura Media Annua (°C)",
         color="#2ca02c",
         marker="o",
@@ -821,7 +908,7 @@ elif menu == "📊 Grafici Annuali":
 
     ax2_g.bar(
         annuale_globale["Anno"],
-        annuale_globale["Pioggia_mm"],
+        annuale_globale["Rain_Num"],
         label="Pioggia Totale Annua (mm)",
         color="#1c83e1",
         alpha=0.8,
@@ -974,7 +1061,7 @@ elif menu == "📁 Importa / Esporta Dati":
   st.subheader("📤 Esporta database")
   if not df.empty:
     csv_bytes = (
-        df.drop(columns=["Data_dt"], errors="ignore")
+        df.drop(columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore")
         .to_csv(index=False)
         .encode("utf-8")
     )
