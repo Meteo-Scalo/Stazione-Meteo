@@ -89,6 +89,33 @@ def fetch_wunderground_data(station_id, api_key):
     return None, f"Errore di connessione: {str(e)}"
 
 
+# Funzione per recuperare le previsioni a 3 giorni
+def fetch_wunderground_forecast(station_id, api_key):
+  if not station_id or not api_key:
+    return None, "Credenziali mancanti."
+
+  # Recuperiamo prima le coordinate della stazione
+  url_curr = f"https://api.weather.com/v2/pws/observations/current?stationId={station_id}&format=json&units=m&apiKey={api_key}"
+  try:
+    res_curr = requests.get(url_curr, timeout=10)
+    if res_curr.status_code == 200:
+      obs_data = res_curr.json().get("observations", [])
+      if obs_data:
+        lat = obs_data[0].get("lat")
+        lon = obs_data[0].get("lon")
+        if lat and lon:
+          # Chiamata API forecast a 3 giorni di Weather.com
+          url_fc = f"https://api.weather.com/v3/wx/forecast/daily/3day?geocode={lat},{lon}&format=json&units=m&language=it-IT&apiKey={api_key}"
+          res_fc = requests.get(url_fc, timeout=10)
+          if res_fc.status_code == 200:
+            return res_fc.json(), "OK"
+          else:
+            return None, f"Errore API Previsioni: {res_fc.status_code}"
+    return None, "Impossibile recuperare le coordinate della stazione."
+  except Exception as e:
+    return None, f"Errore di connessione: {str(e)}"
+
+
 # Intestazione grafica ridotta in altezza tagliando dalla parte superiore
 image_filename = "684225363_1433769152096303_7382692641941825555_n.png"
 if os.path.exists(image_filename):
@@ -96,7 +123,7 @@ if os.path.exists(image_filename):
     img = Image.open(image_filename)
     w, h = img.size
     new_h = int(h * 0.55)
-    top = 0  # Taglia partendo dall'alto
+    top = 0
     img_cropped = img.crop((0, top, w, top + new_h))
     st.image(img_cropped, use_container_width=True)
   except Exception:
@@ -110,11 +137,12 @@ else:
 
 df = load_data()
 
-# Menu laterale con "Dashboard"
+# Menu laterale con la nuova voce "Previsioni Meteo"
 menu = st.sidebar.radio(
     "Menu Principale",
     [
         "📊 Dashboard",
+        "🔮 Previsioni Meteo",
         "🔍 Consultazione Database",
         "📅 Dati Giornalieri",
         "📈 Dati Mensili",
@@ -208,12 +236,9 @@ if menu == "📊 Dashboard":
         )
 
         if current_pressure is not None:
-          # Aggiungi la lettura corrente con il timestamp
           st.session_state["pressure_history"].append(
               (current_time, current_pressure)
           )
-
-          # Rimuovi i dati più vecchi di 3 ore per mantenere solo la finestra temporale corretta
           three_hours_ago = current_time - timedelta(hours=3)
           st.session_state["pressure_history"] = [
               (t, p)
@@ -221,12 +246,10 @@ if menu == "📊 Dashboard":
               if t >= three_hours_ago
           ]
 
-        # Calcolo del trend basato sulla variazione nelle ultime 3 ore
         history = st.session_state["pressure_history"]
         if len(history) >= 2 and current_pressure is not None:
           oldest_pressure = history[0][1]
           diff = current_pressure - oldest_pressure
-          # Soglia di ±0.6 hPa nell'arco delle 3 ore per determinare il trend
           if diff > 0.6:
             press_trend_str = "In aumento 🟢 ↗️"
           elif diff < -0.6:
@@ -236,7 +259,6 @@ if menu == "📊 Dashboard":
         else:
           press_trend_str = "Stabile ➡️"
 
-        # Tutte le 7 metriche su un'unica riga
         col_l1, col_l2, col_l3, col_l4, col_l5, col_l6, col_l7 = st.columns(7)
         with col_l1:
           st.metric(label="🌡️ Temperatura", value=temp_val)
@@ -369,7 +391,162 @@ if menu == "📊 Dashboard":
     )
 
 # ==========================================
-# 2. CONSULTAZIONE DATABASE
+# 2. PREVISIONI METEO
+# ==========================================
+elif menu == "🔮 Previsioni Meteo":
+  st.header("🔮 Previsioni Meteo (Prossimi 3 Giorni)")
+  st.write(
+      "Previsioni ufficiali elaborate tramite le API di Weather"
+      " Underground/Weather.com per la località della stazione."
+  )
+
+  if wu_station_id and wu_api_key:
+    forecast_data, err_fc = fetch_wunderground_forecast(
+        wu_station_id, wu_api_key
+    )
+    if forecast_data:
+      try:
+        days_OfWeek = forecast_data.get("dayOfWeek", [])
+        temp_max = forecast_data.get("temperatureMax", [])
+        temp_min = forecast_data.get("temperatureMin", [])
+        narratives = forecast_data.get("narrative", [])
+        # Daypart contiene ulteriori dettagli come probabilità di pioggia
+        daypart = forecast_data.get("daypart", [{}])[0]
+        precip_chance = daypart.get("precipChance", [0, 0, 0, 0, 0, 0])
+
+        # Mostriamo le metriche sintetiche per i prossimi 3 giorni
+        cols = st.columns(3)
+        for i in range(min(3, len(days_OfWeek))):
+          d_name = days_OfWeek[i]
+          t_mx = (
+              temp_max[i]
+              if i < len(temp_max) and temp_max[i] is not None
+              else "N.D."
+          )
+          t_mn = (
+              temp_min[i]
+              if i < len(temp_min) and temp_min[i] is not None
+              else "N.D."
+          )
+          desc = narratives[i] if i < len(narratives) else ""
+
+          with cols[i]:
+            st.metric(
+                label=f"📅 {d_name}",
+                value=f"Max: {t_mx}°C",
+                delta=f"Min: {t_mn}°C",
+                delta_color="off",
+            )
+            st.caption(desc)
+
+        st.markdown("---")
+        st.subheader("📱 Infografica Dinamica per Instagram (4:5)")
+        st.write(
+            "Grafico riepilogativo delle temperature e condizioni previste,"
+            " ottimizzato per la condivisione social."
+        )
+
+        # Generazione infografica 4:5 con Matplotlib
+        fig, ax = plt.subplots(figsize=(5.5, 6.8), dpi=180)
+
+        # Estraiamo i primi 3 giorni per il grafico
+        plot_days = days_OfWeek[:3]
+        plot_max = [
+            t if t is not None else 0 for t in temp_max[:3]
+        ]  # convertiamo eventuali None
+        plot_min = [t if t is not None else 0 for t in temp_min[:3]]
+
+        x = range(len(plot_days))
+        width = 0.35
+
+        rects1 = ax.bar(
+            [p - width / 2 for p in x],
+            plot_max,
+            width,
+            label="Temp Max (°C)",
+            color="#ff7f0e",
+            alpha=0.85,
+        )
+        rects2 = ax.bar(
+            [p + width / 2 for p in x],
+            plot_min,
+            width,
+            label="Temp Min (°C)",
+            color="#1c83e1",
+            alpha=0.85,
+        )
+
+        ax.set_title(
+            "Previsioni Meteo - Prossimi 3 Giorni\nMonterotondo Scalo",
+            fontsize=12,
+            fontweight="bold",
+            pad=15,
+        )
+        ax.set_ylabel("Temperatura (°C)", fontsize=10)
+        ax.set_xticks(list(x))
+        ax.set_xticklabels(plot_days, fontsize=10, fontweight="bold")
+        ax.grid(True, linestyle="--", alpha=0.5)
+        ax.legend(loc="upper right", fontsize=8)
+
+        # Aggiunta etichette valori sulle barre
+        for rect in rects1:
+          height = rect.get_height()
+          ax.annotate(
+              f"{height}°",
+              xy=(rect.get_x() + rect.get_width() / 2, height),
+              xytext=(0, 3),
+              textcoords="offset points",
+              ha="center",
+              va="bottom",
+              fontsize=9,
+              fontweight="bold",
+          )
+        for rect in rects2:
+          height = rect.get_height()
+          ax.annotate(
+              f"{height}°",
+              xy=(rect.get_x() + rect.get_width() / 2, height),
+              xytext=(0, 3),
+              textcoords="offset points",
+              ha="center",
+              va="bottom",
+              fontsize=9,
+              fontweight="bold",
+          )
+
+        plt.tight_layout()
+        st.pyplot(fig)
+
+        # Pulsante download infografica
+        buf_fc = io.BytesIO()
+        fig.savefig(buf_fc, format="png", bbox_inches="tight")
+        buf_fc.seek(0)
+
+        st.download_button(
+            label="📥 Scarica Infografica Previsioni (PNG 4:5)",
+            data=buf_fc,
+            file_name="previsioni_meteo_3giorni.png",
+            mime="image/png",
+        )
+        plt.close(fig)
+
+      except Exception as e:
+        st.error(
+            "Errore nell'elaborazione o visualizzazione delle previsioni:"
+            f" {e}"
+        )
+    else:
+      st.error(
+          f"Impossibile recuperare le previsioni da Weather Underground: {err_fc}"
+      )
+  else:
+    st.info(
+        "💡 Configura le credenziali Weather Underground (`station_id` e"
+        " `api_key`) nella sezione [wunderground] dei Secrets di Streamlit."
+    )
+
+# ==========================================
+# 3. CONSULTAZIONE DATABASE
 # ==========================================
 elif menu == "🔍 Consultazione Database":
   st.header("Consultazione Database (Intervallo Date)")
@@ -392,7 +569,7 @@ elif menu == "🔍 Consultazione Database":
   )
 
 # ==========================================
-# 3. DATI GIORNALIERI
+# 4. DATI GIORNALIERI
 # ==========================================
 elif menu == "📅 Dati Giornalieri":
   st.header("Dati Giornalieri & Grafico con Confronto Storico")
@@ -569,7 +746,7 @@ elif menu == "📅 Dati Giornalieri":
     )
 
 # ==========================================
-# 4. DATI MENSILI
+# 5. DATI MENSILI
 # ==========================================
 elif menu == "📈 Dati Mensili":
   st.header("Dati Mensili & Grafici con Confronto Storico")
@@ -742,7 +919,7 @@ elif menu == "📈 Dati Mensili":
       plt.close(fig_ann)
 
 # ==========================================
-# 5. GRAFICI ANNUALI (GLOBALE)
+# 6. GRAFICI ANNUALI (GLOBALE)
 # ==========================================
 elif menu == "📊 Grafici Annuali":
   st.header("Grafici Annuali Globali (Temperatura & Pioggia)")
@@ -817,7 +994,7 @@ elif menu == "📊 Grafici Annuali":
     plt.close(fig_glob)
 
 # ==========================================
-# 6. INSERISCI MISURA MANUALE (PROTETTO)
+# 7. INSERISCI MISURA MANUALE (PROTETTO)
 # ==========================================
 elif menu == "➕ Inserisci Misura":
   st.header("➕ Inserimento Manuale Dati (Area Riservata)")
@@ -894,7 +1071,7 @@ elif menu == "➕ Inserisci Misura":
         st.error(f"Errore durante il salvataggio: {e}")
 
 # ==========================================
-# 7. IMPORTA / ESPORTA DATI (PROTETTO)
+# 8. IMPORTA / ESPORTA DATI (PROTETTO)
 # ==========================================
 elif menu == "📁 Importa / Esporta Dati":
   st.header("📁 Gestione File & Backup (Area Riservata)")
