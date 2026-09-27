@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 import io
 import os
 import matplotlib.pyplot as plt
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 import pandas as pd
 import requests
 import sqlite3
@@ -85,8 +85,8 @@ def load_data():
     # Inseriamo 3 record di default se la tabella è vuota
     default_prev = [
         ("Oggi", 24.0, 14.0, "Sereno o poco nuvoloso"),
-        ("Domani", 25.0, 15.0, "Variabile con possibili schiarite"),
-        ("Dopodomani", 23.0, 13.0, "Nuvoloso con piogge sparse"),
+        ("Domani", 25.0, 15.0, "Variabile con possibili piogge"),
+        ("Dopodomani", 23.0, 13.0, "Nuvoloso con neve sui monti"),
     ]
     cursor.executemany(
         """
@@ -133,6 +133,92 @@ def fetch_wunderground_data(station_id, api_key):
     return None, f"Errore di connessione: {str(e)}"
 
 
+# Funzione per generare l'infografica in stile fumetto (4:5)
+def create_comic_infographic(f_df):
+  # Dimensioni Instagram 4:5 (es. 1080 x 1350)
+  width, height = 1080, 1350
+  img = Image.new("RGB", (width, height), color="#FFF9E6")  # Sfondo carta giallina chiaro stile fumetto
+  draw = ImageDraw.Draw(img)
+
+  # Cornice esterna spessa stile fumetto
+  draw.rectangle([20, 20, width - 20, height - 20], outline="#111111", width=8)
+
+  # Titolo principale
+  draw.rectangle([50, 50, width - 50, 180], fill="#FFD700", outline="#111111", width=5)
+  try:
+    font_title = ImageFont.truetype("arial.ttf", 46)
+    font_sub = ImageFont.truetype("arial.ttf", 24)
+    font_panel_title = ImageFont.truetype("arial.ttf", 36)
+    font_panel_text = ImageFont.truetype("arial.ttf", 26)
+  except:
+    font_title = ImageFont.load_default()
+    font_sub = ImageFont.load_default()
+    font_panel_title = ImageFont.load_default()
+    font_panel_text = ImageFont.load_default()
+
+  draw.text((width / 2, 85), "⚡ PREVISIONI METEO ⚡", fill="#111111", font=font_title, anchor="mm")
+  draw.text((width / 2, 135), "Stazione Monterotondo Scalo", fill="#333333", font=font_sub, anchor="mm")
+
+  # Pannelli per i 3 giorni
+  panel_y_starts = [220, 580, 940]
+  panel_height = 320
+
+  for i, row in f_df.iterrows():
+    if i >= 3:
+      break
+    py = panel_y_starts[i]
+    
+    # Sfondo riquadro fumetto
+    panel_bg = "#FFFFFF" if i % 2 == 0 else "#E6F2FF"
+    draw.rectangle([60, py, width - 60, py + panel_height], fill=panel_bg, outline="#111111", width=5)
+
+    # Etichetta giorno (es. OGGI)
+    draw.rectangle([90, py - 20, 320, py + 30], fill="#FF4500", outline="#111111", width=3)
+    draw.text((205, py + 5), str(row["Giorno_Label"]).upper(), fill="#FFFFFF", font=font_panel_title, anchor="mm")
+
+    # Determina il tipo di icona in base alla descrizione
+    desc_lower = str(row["Descrizione"]).lower()
+    
+    # Disegno icona meteo stilizzata a sinistra nel pannello
+    icon_center_x, icon_center_y = 180, py + 180
+    if "piogg" in desc_lower or "temporale" in desc_lower or "rovesci" in desc_lower:
+      # Icona Pioggia: Nuvola grigia con gocce blu
+      draw.ellipse([icon_center_x - 60, icon_center_y - 40, icon_center_x + 60, icon_center_y + 10], fill="#B0C4DE", outline="#111111", width=3)
+      draw.line([icon_center_x - 30, icon_center_y + 20, icon_center_x - 40, icon_center_y + 60], fill="#0000FF", width=4)
+      draw.line([icon_center_x, icon_center_y + 20, icon_center_x - 10, icon_center_y + 60], fill="#0000FF", width=4)
+      draw.line([icon_center_x + 30, icon_center_y + 20, icon_center_x + 20, icon_center_y + 60], fill="#0000FF", width=4)
+      weather_icon_name = "PIOGGIA"
+    elif "neve" in desc_lower:
+      # Icona Neve: Nuvola con fiocchi
+      draw.ellipse([icon_center_x - 60, icon_center_y - 40, icon_center_x + 60, icon_center_y + 10], fill="#D3D3D3", outline="#111111", width=3)
+      draw.text((icon_center_x - 20, icon_center_y + 20), "❄️ ❄️", fill="#111111", font=font_panel_text)
+      weather_icon_name = "NEVE"
+    elif "nuvol" in desc_lower or "coperto" in desc_lower:
+      # Icona Nuvoloso
+      draw.ellipse([icon_center_x - 70, icon_center_y - 20, icon_center_x + 70, icon_center_y + 40], fill="#C0C0C0", outline="#111111", width=3)
+      weather_icon_name = "NUVOLOSO"
+    elif "variabil" in desc_lower or "schiarite" in desc_lower:
+      # Icona Variabile (Sole + Nuvola)
+      draw.ellipse([icon_center_x - 30, icon_center_y - 50, icon_center_x + 50, icon_center_y + 30], fill="#FFD700", outline="#111111", width=3)
+      draw.ellipse([icon_center_x - 50, icon_center_y - 10, icon_center_x + 50, icon_center_y + 50], fill="#E0E0E0", outline="#111111", width=3)
+      weather_icon_name = "VARIABILE"
+    else:
+      # Icona Sole
+      draw.ellipse([icon_center_x - 50, icon_center_y - 50, icon_center_x + 50, icon_center_y + 50], fill="#FF8C00", outline="#111111", width=4)
+      weather_icon_name = "SOLE"
+
+    # Testo Temperature
+    tmax_str = f"MAX: {row['Temp_Max']:.1f}°C"
+    tmin_str = f"MIN: {row['Temp_Min']:.1f}°C"
+    draw.text((360, py + 80), tmax_str, fill="#CC0000", font=font_panel_title)
+    draw.text((360, py + 130), tmin_str, fill="#0000CC", font=font_panel_title)
+
+    # Testo Descrizione
+    draw.text((360, py + 190), f"Condizioni: {row['Descrizione']}", fill="#222222", font=font_panel_text)
+
+  return img
+
+
 # Intestazione grafica ridotta in altezza tagliando dalla parte superiore
 image_filename = "684225363_1433769152096303_7382692641941825555_n.png"
 if os.path.exists(image_filename):
@@ -147,10 +233,7 @@ if os.path.exists(image_filename):
     st.image(image_filename, use_container_width=True)
 else:
   st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
-  st.warning(
-      f"⚠️ Immagine di intestazione ('{image_filename}') non trovata nella"
-      " cartella del repository."
-  )
+  st.warning(f"⚠️ Immagine di intestazione ('{image_filename}') non trovata nella cartella del repository.")
 
 df = load_data()
 
@@ -187,10 +270,7 @@ except Exception:
   admin_password = "admin123"
 
 if df.empty:
-  st.warning(
-      "Il database è attualmente vuoto. Utilizza la sezione 'Importa / Esporta"
-      " Dati' o 'Inserisci Misura' per popolare le misurazioni."
-  )
+  st.warning("Il database è attualmente vuoto. Utilizza la sezione 'Importa / Esporta Dati' o 'Inserisci Misura' per popolare le misurazioni.")
 else:
   if "Data_dt" not in df.columns:
     df["Data_dt"] = pd.to_datetime(df["Data"], errors="coerce")
@@ -203,11 +283,7 @@ if menu == "📊 Dashboard":
 
   if wu_station_id and wu_api_key:
     wu_data, err_msg = fetch_wunderground_data(wu_station_id, wu_api_key)
-    if (
-        wu_data
-        and "observations" in wu_data
-        and len(wu_data["observations"]) > 0
-    ):
+    if wu_data and "observations" in wu_data and len(wu_data["observations"]) > 0:
       try:
         obs = wu_data["observations"][0]
         metric = obs.get("metric", {})
@@ -215,13 +291,7 @@ if menu == "📊 Dashboard":
         temp_raw = metric.get("temp")
         heat_raw = metric.get("heatIndex")
         wind_chill_raw = metric.get("windChill")
-        feels_raw = (
-            heat_raw
-            if heat_raw is not None
-            else (
-                wind_chill_raw if wind_chill_raw is not None else temp_raw
-            )
-        )
+        feels_raw = heat_raw if heat_raw is not None else (wind_chill_raw if wind_chill_raw is not None else temp_raw)
 
         hum_val = obs.get("humidity", "N.D.")
         pressure_raw = metric.get("pressure", "N.D.")
@@ -248,20 +318,12 @@ if menu == "📊 Dashboard":
           st.session_state["pressure_history"] = []
 
         current_time = datetime.now()
-        current_pressure = (
-            float(pressure_raw) if pressure_raw is not None else None
-        )
+        current_pressure = float(pressure_raw) if pressure_raw is not None else None
 
         if current_pressure is not None:
-          st.session_state["pressure_history"].append(
-              (current_time, current_pressure)
-          )
+          st.session_state["pressure_history"].append((current_time, current_pressure))
           three_hours_ago = current_time - timedelta(hours=3)
-          st.session_state["pressure_history"] = [
-              (t, p)
-              for t, p in st.session_state["pressure_history"]
-              if t >= three_hours_ago
-          ]
+          st.session_state["pressure_history"] = [(t, p) for t, p in st.session_state["pressure_history"] if t >= three_hours_ago]
 
         history = st.session_state["pressure_history"]
         if len(history) >= 2 and current_pressure is not None:
@@ -282,14 +344,7 @@ if menu == "📊 Dashboard":
         with col_l2:
           st.metric(label="🌡️ Temp. Avvertita", value=feels_val)
         with col_l3:
-          st.metric(
-              label="💧 Umidità",
-              value=(
-                  f"{hum_val} %"
-                  if hum_val != "N.D." and hum_val is not None
-                  else "N.D."
-              ),
-          )
+          st.metric(label="💧 Umidità", value=f"{hum_val} %" if hum_val != "N.D." and hum_val is not None else "N.D.")
         with col_l4:
           st.metric(label="⏱️ Pressione", value=pressure_val)
         with col_l5:
@@ -304,38 +359,18 @@ if menu == "📊 Dashboard":
       except Exception as e:
         st.warning(f"Errore nell'elaborazione dei dati meteo: {e}")
     else:
-      st.error(
-          "Impossibile recuperare i dati da Weather Underground. Dettaglio:"
-          f" {err_msg}"
-      )
+      st.error(f"Impossibile recuperare i dati da Weather Underground. Dettaglio: {err_msg}")
   else:
-    st.info(
-        "💡 Configura le credenziali Weather Underground (`station_id` e"
-        " `api_key`) nella sezione [wunderground] dei Secrets di Streamlit."
-    )
+    st.info("💡 Configura le credenziali Weather Underground (`station_id` e `api_key`) nella sezione [wunderground] dei Secrets di Streamlit.")
 
   st.markdown("---")
   st.subheader("Estremi Meteo")
-  st.markdown(
-      "<p style='text-align: center;'>Tabella riepilogativa con le due"
-      " temperature massime più alte e le due minime più basse per ogni"
-      " mese, inclusi i record assoluti.</p>",
-      unsafe_allow_html=True,
-  )
+  st.markdown("<p style='text-align: center;'>Tabella riepilogativa con le due temperature massime più alte e le due minime più basse per ogni mese, inclusi i record assoluti.</p>", unsafe_allow_html=True)
 
   mesi_nomi = {
-      1: "Gennaio",
-      2: "Febbraio",
-      3: "Marzo",
-      4: "Aprile",
-      5: "Maggio",
-      6: "Giugno",
-      7: "Luglio",
-      8: "Agosto",
-      9: "Settembre",
-      10: "Ottobre",
-      11: "Novembre",
-      12: "Dicembre",
+      1: "Gennaio", 2: "Febbraio", 3: "Marzo", 4: "Aprile",
+      5: "Maggio", 6: "Giugno", 7: "Luglio", 8: "Agosto",
+      9: "Settembre", 10: "Ottobre", 11: "Novembre", 12: "Dicembre"
   }
 
   temp_df = df.copy()
@@ -349,17 +384,13 @@ if menu == "📊 Dashboard":
       top2_max = m_data.nlargest(2, "Temperatura_Max_C")
       max_str_list = []
       for _, r in top2_max.iterrows():
-        max_str_list.append(
-            f"{r['Temperatura_Max_C']:.1f} °C ({str(r['Data']).split()[0]})"
-        )
+        max_str_list.append(f"{r['Temperatura_Max_C']:.1f} °C ({str(r['Data']).split()[0]})")
       max_str = " | ".join(max_str_list)
 
       bot2_min = m_data.nsmallest(2, "Temperatura_Min_C")
       min_str_list = []
       for _, r in bot2_min.iterrows():
-        min_str_list.append(
-            f"{r['Temperatura_Min_C']:.1f} °C ({str(r['Data']).split()[0]})"
-        )
+        min_str_list.append(f"{r['Temperatura_Min_C']:.1f} °C ({str(r['Data']).split()[0]})")
       min_str = " | ".join(min_str_list)
 
       table_data.append({
@@ -376,12 +407,8 @@ if menu == "📊 Dashboard":
         hide_index=True,
         column_config={
             "Mese": st.column_config.TextColumn("Mese", width="small"),
-            "Top 2 Temp Max": st.column_config.TextColumn(
-                "🔥 Top 2 Temperature Massime (Valore e Data)", width="large"
-            ),
-            "Top 2 Temp Min": st.column_config.TextColumn(
-                "❄️ Top 2 Temperature Minime (Valore e Data)", width="large"
-            ),
+            "Top 2 Temp Max": st.column_config.TextColumn("🔥 Top 2 Temperature Massime (Valore e Data)", width="large"),
+            "Top 2 Temp Min": st.column_config.TextColumn("❄️ Top 2 Temperature Minime (Valore e Data)", width="large"),
         },
     )
 
@@ -396,26 +423,15 @@ if menu == "📊 Dashboard":
 
     st.markdown("### 🌟 Record Assoluti Generali")
     col_a, col_b = st.columns(2)
-    col_a.metric(
-        "Temperatura Max Assoluta",
-        f"{abs_max_val:.1f} °C",
-        f"Data: {abs_max_date}",
-    )
-    col_b.metric(
-        "Temperatura Min Assoluta",
-        f"{abs_min_val:.1f} °C",
-        f"Data: {abs_min_date}",
-    )
+    col_a.metric("Temperatura Max Assoluta", f"{abs_max_val:.1f} °C", f"Data: {abs_max_date}")
+    col_b.metric("Temperatura Min Assoluta", f"{abs_min_val:.1f} °C", f"Data: {abs_min_date}")
 
 # ==========================================
-# 2. PREVISIONI METEO (INSERIMENTO MANUALE & INFOGRAFICA)
+# 2. PREVISIONI METEO (STILE FUMETTO / ICONE)
 # ==========================================
 elif menu == "🔮 Previsioni Meteo":
   st.header("🔮 Previsioni Meteo (Prossimi 3 Giorni)")
-  st.write(
-      "Previsioni meteorologiche configurate e aggiornate per la stazione di"
-      " Monterotondo Scalo."
-  )
+  st.write("Previsioni meteorologiche configurate e aggiornate per la stazione di Monterotondo Scalo.")
 
   f_df = load_forecasts()
 
@@ -433,102 +449,30 @@ elif menu == "🔮 Previsioni Meteo":
         st.caption(row["Descrizione"])
 
     st.markdown("---")
-    st.subheader("📱 Infografica Dinamica per Instagram (4:5)")
-    st.write(
-        "Grafico riepilogativo basato sulle previsioni inserite,"
-        " ottimizzato per la condivisione social."
-    )
+    st.subheader("🎨 Infografica in Stile Fumetto per Instagram (4:5)")
+    st.write("Anteprima dell'infografica in stile fumetto generata automaticamente con icone e pannelli dedicati:")
 
-    # Generazione infografica 4:5 con Matplotlib
-    fig, ax = plt.subplots(figsize=(5.5, 6.8), dpi=180)
+    # Generazione e visualizzazione infografica stile fumetto
+    comic_img = create_comic_infographic(f_df)
+    st.image(comic_img, use_container_width=True)
 
-    plot_days = f_df["Giorno_Label"].tolist()
-    plot_max = f_df["Temp_Max"].tolist()
-    plot_min = f_df["Temp_Min"].tolist()
-
-    x = range(len(plot_days))
-    width = 0.35
-
-    rects1 = ax.bar(
-        [p - width / 2 for p in x],
-        plot_max,
-        width,
-        label="Temp Max (°C)",
-        color="#ff7f0e",
-        alpha=0.85,
-    )
-    rects2 = ax.bar(
-        [p + width / 2 for p in x],
-        plot_min,
-        width,
-        label="Temp Min (°C)",
-        color="#1c83e1",
-        alpha=0.85,
-    )
-
-    ax.set_title(
-        "Previsioni Meteo - Prossimi 3 Giorni\nMonterotondo Scalo",
-        fontsize=12,
-        fontweight="bold",
-        pad=15,
-    )
-    ax.set_ylabel("Temperatura (°C)", fontsize=10)
-    ax.set_xticks(list(x))
-    ax.set_xticklabels(plot_days, fontsize=10, fontweight="bold")
-    ax.grid(True, linestyle="--", alpha=0.5)
-    ax.legend(loc="upper right", fontsize=8)
-
-    # Aggiunta etichette valori sulle barre
-    for rect in rects1:
-      height = rect.get_height()
-      ax.annotate(
-          f"{height:.1f}°",
-          xy=(rect.get_x() + rect.get_width() / 2, height),
-          xytext=(0, 3),
-          textcoords="offset points",
-          ha="center",
-          va="bottom",
-          fontsize=9,
-          fontweight="bold",
-      )
-    for rect in rects2:
-      height = rect.get_height()
-      ax.annotate(
-          f"{height:.1f}°",
-          xy=(rect.get_x() + rect.get_width() / 2, height),
-          xytext=(0, 3),
-          textcoords="offset points",
-          ha="center",
-          va="bottom",
-          fontsize=9,
-          fontweight="bold",
-      )
-
-    plt.tight_layout()
-    st.pyplot(fig)
-
-    # Pulsante download infografica
+    # Pulsante download infografica stile fumetto
     buf_fc = io.BytesIO()
-    fig.savefig(buf_fc, format="png", bbox_inches="tight")
+    comic_img.save(buf_fc, format="png")
     buf_fc.seek(0)
 
     st.download_button(
-        label="📥 Scarica Infografica Previsioni (PNG 4:5)",
+        label="📥 Scarica Infografica Stile Fumetto (PNG 4:5)",
         data=buf_fc,
-        file_name="previsioni_meteo_3giorni.png",
+        file_name="previsioni_meteo_fumetto.png",
         mime="image/png",
     )
-    plt.close(fig)
 
   st.markdown("---")
   st.subheader("⚙️ Modifica Previsioni (Area Riservata)")
 
   if not st.session_state["auth_ok"]:
-    pwd_prev = st.text_input(
-        "Inserisci la password amministratore per modificare le previsioni:",
-        type="password",
-        key="pwd_prev_input",
-    )
+    pwd_prev = st.text_input("Inserisci la password amministratore per modificare le previsioni:", type="password", key="pwd_prev_input")
     if st.button("Accedi per Modificare", key="btn_prev_login"):
       if pwd_prev == admin_password:
         st.session_state["auth_ok"] = True
@@ -542,43 +486,22 @@ elif menu == "🔮 Previsioni Meteo":
       st.rerun()
 
     with st.form("form_modifica_previsioni"):
-      st.write("Aggiorna i dati per i 3 giorni:")
+      st.write("Aggiorna i dati per i 3 giorni (le icone nell'infografica si adatteranno alle parole chiave come 'pioggia', 'neve', 'nuvoloso', 'sole'):")
       updated_rows = []
 
-      # Carichiamo i dati attuali nel form
       current_f = load_forecasts()
       for idx, row in current_f.iterrows():
         st.markdown(f"**Giorno {idx+1}**")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-          g_label = st.text_input(
-              f"Etichetta {idx+1}",
-              value=row["Giorno_Label"],
-              key=f"label_{idx}",
-          )
+          g_label = st.text_input(f"Etichetta {idx+1}", value=row["Giorno_Label"], key=f"label_{idx}")
         with c2:
-          t_max = st.number_input(
-              f"Max (°C) {idx+1}",
-              value=float(row["Temp_Max"]),
-              format="%.1f",
-              key=f"tmax_{idx}",
-          )
+          t_max = st.number_input(f"Max (°C) {idx+1}", value=float(row["Temp_Max"]), format="%.1f", key=f"tmax_{idx}")
         with c3:
-          t_min = st.number_input(
-              f"Min (°C) {idx+1}",
-              value=float(row["Temp_Min"]),
-              format="%.1f",
-              key=f"tmin_{idx}",
-          )
+          t_min = st.number_input(f"Min (°C) {idx+1}", value=float(row["Temp_Min"]), format="%.1f", key=f"tmin_{idx}")
         with c4:
-          desc = st.text_input(
-              f"Descrizione {idx+1}",
-              value=row["Descrizione"],
-              key=f"desc_{idx}",
-          )
-        updated_rows.append(
-            (row["ID"], g_label, t_max, t_min, desc)
-        )  # keep ID for update
+          desc = st.text_input(f"Descrizione {idx+1}", value=row["Descrizione"], key=f"desc_{idx}")
+        updated_rows.append((row["ID"], g_label, t_max, t_min, desc))
 
       submit_prev = st.form_submit_button("Salva Nuove Previsioni")
       if submit_prev:
@@ -586,14 +509,11 @@ elif menu == "🔮 Previsioni Meteo":
           conn = sqlite3.connect(DB_NAME)
           cursor = conn.cursor()
           for r_id, g_label, t_max, t_min, desc in updated_rows:
-            cursor.execute(
-                """
+            cursor.execute("""
                             UPDATE previsioni 
                             SET Giorno_Label = ?, Temp_Max = ?, Temp_Min = ?, Descrizione = ?
                             WHERE ID = ?
-                        """,
-                (g_label, t_max, t_min, desc, r_id),
-            )
+                        """, (g_label, t_max, t_min, desc, r_id))
           conn.commit()
           conn.close()
           st.cache_data.clear()
@@ -615,15 +535,8 @@ elif menu == "🔍 Consultazione Database":
   start_date = col1.date_input("Data Inizio", min_d)
   end_date = col2.date_input("Data Fine", max_d)
 
-  filtered_df = df[
-      (df["Data_dt"].dt.date >= start_date)
-      & (df["Data_dt"].dt.date <= end_date)
-  ]
-  st.dataframe(
-      filtered_df.drop(columns=["Data_dt"], errors="ignore"),
-      use_container_width=True,
-      hide_index=True,
-  )
+  filtered_df = df[(df["Data_dt"].dt.date >= start_date) & (df["Data_dt"].dt.date <= end_date)]
+  st.dataframe(filtered_df.drop(columns=["Data_dt"], errors="ignore"), use_container_width=True, hide_index=True)
 
 # ==========================================
 # 4. DATI GIORNALIERI
@@ -637,46 +550,22 @@ elif menu == "📅 Dati Giornalieri":
   col1, col2 = st.columns(2)
   anni_disp = sorted(df["Data_dt"].dt.year.dropna().unique())
 
-  default_anno_idx = (
-      anni_disp.index(current_year)
-      if current_year in anni_disp
-      else (len(anni_disp) - 1 if anni_disp else 0)
-  )
-  sel_anno = (
-      col1.selectbox("Seleziona Anno", anni_disp, index=default_anno_idx)
-      if anni_disp
-      else current_year
-  )
+  default_anno_idx = anni_disp.index(current_year) if current_year in anni_disp else (len(anni_disp) - 1 if anni_disp else 0)
+  sel_anno = col1.selectbox("Seleziona Anno", anni_disp, index=default_anno_idx) if anni_disp else current_year
 
   mesi_dict = {
-      "Gennaio": 1,
-      "Febbraio": 2,
-      "Marzo": 3,
-      "Aprile": 4,
-      "Maggio": 5,
-      "Giugno": 6,
-      "Luglio": 7,
-      "Agosto": 8,
-      "Settembre": 9,
-      "Ottobre": 10,
-      "Novembre": 11,
-      "Dicembre": 12,
+      "Gennaio": 1, "Febbraio": 2, "Marzo": 3, "Aprile": 4,
+      "Maggio": 5, "Giugno": 6, "Luglio": 7, "Agosto": 8,
+      "Settembre": 9, "Ottobre": 10, "Novembre": 11, "Dicembre": 12
   }
   mesi_list = list(mesi_dict.keys())
   default_mese_name = [k for k, v in mesi_dict.items() if v == current_month][0]
-  default_mese_idx = (
-      mesi_list.index(default_mese_name) if default_mese_name in mesi_list else 0
-  )
+  default_mese_idx = mesi_list.index(default_mese_name) if default_mese_name in mesi_list else 0
 
-  sel_mese_str = col2.selectbox(
-      "Seleziona Mese", mesi_list, index=default_mese_idx
-  )
+  sel_mese_str = col2.selectbox("Seleziona Mese", mesi_list, index=default_mese_idx)
   sel_mese_num = mesi_dict[sel_mese_str]
 
-  m_data = df[
-      (df["Data_dt"].dt.year == sel_anno)
-      & (df["Data_dt"].dt.month == sel_mese_num)
-  ]
+  m_data = df[(df["Data_dt"].dt.year == sel_anno) & (df["Data_dt"].dt.month == sel_mese_num)]
 
   if m_data.empty:
     st.info("Nessun dato trovato per il mese e anno selezionati.")
@@ -694,87 +583,36 @@ elif menu == "📅 Dati Giornalieri":
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Temp Max Assoluta", f"{tmax_max:.1f} °C")
     c2.metric("Temp Min Assoluta", f"{tmin_min:.1f} °C")
-    c3.metric(
-        "Temp Media Mese",
-        f"{tmed_mean:.1f} °C",
-        delta=f"{delta_tmed:+.1f} °C vs storica",
-        delta_color="inverse",
-    )
+    c3.metric("Temp Media Mese", f"{tmed_mean:.1f} °C", delta=f"{delta_tmed:+.1f} °C vs storica", delta_color="inverse")
     c4.metric("Pioggia Totale", f"{rain_sum:.1f} mm")
 
-    st.caption(
-        f"💡 Media storica di {sel_mese_str} calcolata sul totale degli anni:"
-        f" {hist_tmed_mean:.1f} °C"
-    )
+    st.caption(f"💡 Media storica di {sel_mese_str} calcolata sul totale degli anni: {hist_tmed_mean:.1f} °C")
 
     st.markdown("---")
-    st.subheader(
-        "📱 Grafico Formato Instagram (4:5) - Temperatura & Pioggia"
-    )
-    st.write(
-        "Confronto tra la temperatura media misurata e la media storica"
-        " insieme al grafico a barre delle precipitazioni giornaliere."
-    )
+    st.subheader("📱 Grafico Formato Instagram (4:5) - Temperatura & Pioggia")
+    st.write("Confronto tra la temperatura media misurata e la media storica insieme al grafico a barre delle precipitazioni giornaliere.")
 
-    hist_prev = df[
-        (df["Data_dt"].dt.month == sel_mese_num)
-        & (df["Data_dt"].dt.year < sel_anno)
-    ]
+    hist_prev = df[(df["Data_dt"].dt.month == sel_mese_num) & (df["Data_dt"].dt.year < sel_anno)]
     if hist_prev.empty:
       hist_prev = hist_mese_data
 
-    hist_daily_mean = (
-        hist_prev.groupby(hist_prev["Data_dt"].dt.day)["Temperatura_Media_C"]
-        .mean()
-        .reset_index()
-    )
+    hist_daily_mean = hist_prev.groupby(hist_prev["Data_dt"].dt.day)["Temperatura_Media_C"].mean().reset_index()
     hist_daily_mean.columns = ["Giorno", "Temp_Media_Storica"]
 
     m_data_plot = m_data.copy()
     m_data_plot["Giorno"] = m_data_plot["Data_dt"].dt.day
-    m_data_plot = pd.merge(
-        m_data_plot, hist_daily_mean, on="Giorno", how="left"
-    )
+    m_data_plot = pd.merge(m_data_plot, hist_daily_mean, on="Giorno", how="left")
 
-    fig, (ax1, ax2) = plt.subplots(
-        2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True
-    )
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True)
 
-    ax1.plot(
-        m_data_plot["Giorno"],
-        m_data_plot["Temperatura_Media_C"],
-        label=f"Media Misurata {sel_anno} (°C)",
-        color="#2ca02c",
-        linewidth=1.8,
-        marker="o",
-        markersize=3,
-    )
-    ax1.plot(
-        m_data_plot["Giorno"],
-        m_data_plot["Temp_Media_Storica"],
-        label="Media Storica (Anni Prec.) (°C)",
-        color="#ff7f0e",
-        linewidth=1.8,
-        linestyle="--",
-    )
-    ax1.set_title(
-        f"Confronto Temperatura Media & Pioggia\n{sel_mese_str} {sel_anno}",
-        fontsize=11,
-        fontweight="bold",
-        pad=10,
-    )
+    ax1.plot(m_data_plot["Giorno"], m_data_plot["Temperatura_Media_C"], label=f"Media Misurata {sel_anno} (°C)", color="#2ca02c", linewidth=1.8, marker="o", markersize=3)
+    ax1.plot(m_data_plot["Giorno"], m_data_plot["Temp_Media_Storica"], label="Media Storica (Anni Prec.) (°C)", color="#ff7f0e", linewidth=1.8, linestyle="--")
+    ax1.set_title(f"Confronto Temperatura Media & Pioggia\n{sel_mese_str} {sel_anno}", fontsize=11, fontweight="bold", pad=10)
     ax1.set_ylabel("Temperatura (°C)", fontsize=9)
     ax1.grid(True, linestyle="--", alpha=0.5)
     ax1.legend(loc="upper right", fontsize=7)
 
-    ax2.bar(
-        m_data_plot["Giorno"],
-        m_data_plot["Pioggia_mm"],
-        label="Pioggia (mm)",
-        color="#1c83e1",
-        alpha=0.8,
-        width=0.8,
-    )
+    ax2.bar(m_data_plot["Giorno"], m_data_plot["Pioggia_mm"], label="Pioggia (mm)", color="#1c83e1", alpha=0.8, width=0.8)
     ax2.set_xlabel("Giorno del mese", fontsize=9)
     ax2.set_ylabel("Pioggia (mm)", fontsize=9)
     ax2.grid(True, linestyle="--", alpha=0.5)
@@ -796,11 +634,7 @@ elif menu == "📅 Dati Giornalieri":
     plt.close(fig)
 
     st.subheader("📋 Tutte le misurazioni del mese")
-    st.dataframe(
-        m_data.drop(columns=["Data_dt"], errors="ignore"),
-        use_container_width=True,
-        hide_index=True,
-    )
+    st.dataframe(m_data.drop(columns=["Data_dt"], errors="ignore"), use_container_width=True, hide_index=True)
 
 # ==========================================
 # 5. DATI MENSILI
@@ -840,122 +674,49 @@ elif menu == "📈 Dati Mensili":
     })
 
   annual_df = pd.DataFrame(annual_list)
-  st.markdown(
-      f"💡 **Media storica generale (tutti gli anni):**"
-      f" {overall_hist_tmed:.1f} °C"
-  )
+  st.markdown(f"💡 **Media storica generale (tutti gli anni):** {overall_hist_tmed:.1f} °C")
   st.dataframe(annual_df, use_container_width=True, hide_index=True)
 
   if not annual_df.empty:
     st.markdown("---")
-    st.subheader(
-        "📱 Grafico Annuale Formato Instagram (4:5) - Temperatura & Pioggia"
-    )
-    st.write(
-        "Confronto tra la temperatura media mensile misurata nell'anno"
-        " selezionato e la media storica, insieme al totale delle piogge"
-        " mensili."
-    )
+    st.subheader("📱 Grafico Annuale Formato Instagram (4:5) - Temperatura & Pioggia")
+    st.write("Confronto tra la temperatura media mensile misurata nell'anno selezionato e la media storica, insieme al totale delle piogge mensili.")
 
     anni_disponibili = annual_df["Anno"].tolist()
-    default_grafico_idx = (
-        anni_disponibili.index(current_year)
-        if current_year in anni_disponibili
-        else (len(anni_disponibili) - 1 if anni_disponibili else 0)
-    )
+    default_grafico_idx = anni_disponibili.index(current_year) if current_year in anni_disponibili else (len(anni_disponibili) - 1 if anni_disponibili else 0)
 
-    sel_anno_grafico = st.selectbox(
-        "Seleziona Anno per il Grafico",
-        anni_disponibili,
-        index=default_grafico_idx,
-    )
+    sel_anno_grafico = st.selectbox("Seleziona Anno per il Grafico", anni_disponibili, index=default_grafico_idx)
     anno_data = temp_df[temp_df["Anno"] == sel_anno_grafico]
 
     if not anno_data.empty:
-      mensile_anno = (
-          anno_data.groupby(anno_data["Data_dt"].dt.month)
-          .agg({
-              "Temperatura_Max_C": "max",
-              "Temperatura_Min_C": "min",
-              "Temperatura_Media_C": "mean",
-              "Pioggia_mm": "sum",
-          })
-          .reset_index()
-      )
+      mensile_anno = anno_data.groupby(anno_data["Data_dt"].dt.month).agg({
+          "Temperatura_Max_C": "max",
+          "Temperatura_Min_C": "min",
+          "Temperatura_Media_C": "mean",
+          "Pioggia_mm": "sum"
+      }).reset_index()
 
       hist_prev_annuale = temp_df[temp_df["Anno"] < sel_anno_grafico]
       if hist_prev_annuale.empty:
         hist_prev_annuale = temp_df
 
-      hist_monthly_mean = (
-          hist_prev_annuale.groupby(hist_prev_annuale["Data_dt"].dt.month)[
-              "Temperatura_Media_C"
-          ]
-          .mean()
-          .reset_index()
-      )
+      hist_monthly_mean = hist_prev_annuale.groupby(hist_prev_annuale["Data_dt"].dt.month)["Temperatura_Media_C"].mean().reset_index()
       hist_monthly_mean.columns = ["Data_dt", "Temp_Media_Storica"]
 
-      mensile_anno = pd.merge(
-          mensile_anno, hist_monthly_mean, on="Data_dt", how="left"
-      )
+      mensile_anno = pd.merge(mensile_anno, hist_monthly_mean, on="Data_dt", how="left")
 
-      fig_ann, (ax1_ann, ax2_ann) = plt.subplots(
-          2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True
-      )
-      mesi_brevi = [
-          "Gen",
-          "Feb",
-          "Mar",
-          "Apr",
-          "Mag",
-          "Giu",
-          "Lug",
-          "Ago",
-          "Set",
-          "Ott",
-          "Nov",
-          "Dic",
-      ]
+      fig_ann, (ax1_ann, ax2_ann) = plt.subplots(2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True)
+      mesi_brevi = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
       x_labels = [mesi_brevi[int(m) - 1] for m in mensile_anno["Data_dt"]]
 
-      ax1_ann.plot(
-          x_labels,
-          mensile_anno["Temperatura_Media_C"],
-          label=f"Media Misurata {sel_anno_grafico} (°C)",
-          color="#2ca02c",
-          marker="s",
-          linewidth=1.8,
-          markersize=4,
-      )
-      ax1_ann.plot(
-          x_labels,
-          mensile_anno["Temp_Media_Storica"],
-          label="Media Storica (Anni Prec.) (°C)",
-          color="#ff7f0e",
-          marker="o",
-          linewidth=1.8,
-          markersize=4,
-          linestyle="--",
-      )
-      ax1_ann.set_title(
-          f"Confronto Temperatura Media Mensile & Pioggia\nAnno {sel_anno_grafico}",
-          fontsize=11,
-          fontweight="bold",
-          pad=10,
-      )
+      ax1_ann.plot(x_labels, mensile_anno["Temperatura_Media_C"], label=f"Media Misurata {sel_anno_grafico} (°C)", color="#2ca02c", marker="s", linewidth=1.8, markersize=4)
+      ax1_ann.plot(x_labels, mensile_anno["Temp_Media_Storica"], label="Media Storica (Anni Prec.) (°C)", color="#ff7f0e", marker="o", linewidth=1.8, markersize=4, linestyle="--")
+      ax1_ann.set_title(f"Confronto Temperatura Media Mensile & Pioggia\nAnno {sel_anno_grafico}", fontsize=11, fontweight="bold", pad=10)
       ax1_ann.set_ylabel("Temperatura (°C)", fontsize=9)
       ax1_ann.grid(True, linestyle="--", alpha=0.5)
       ax1_ann.legend(loc="upper right", fontsize=7)
 
-      ax2_ann.bar(
-          x_labels,
-          mensile_anno["Pioggia_mm"],
-          label="Pioggia Totale (mm)",
-          color="#1c83e1",
-          alpha=0.8,
-          width=0.6,
-      )
+      ax2_ann.bar(x_labels, mensile_anno["Pioggia_mm"], label="Pioggia Totale (mm)", color="#1c83e1", alpha=0.8, width=0.6)
       ax2_ann.set_ylabel("Pioggia (mm)", fontsize=9)
       ax2_ann.grid(True, linestyle="--", alpha=0.5)
       ax2_ann.legend(loc="upper right", fontsize=7)
@@ -980,55 +741,25 @@ elif menu == "📈 Dati Mensili":
 # ==========================================
 elif menu == "📊 Grafici Annuali":
   st.header("Grafici Annuali Globali (Temperatura & Pioggia)")
-  st.write(
-      "Panoramica complessiva di tutti gli anni registrati nel database:"
-      " temperatura media annua e pioggia totale annua, senza alcuna"
-      " selezione richiesta."
-  )
+  st.write("Panoramica complessiva di tutti gli anni registrati nel database: temperatura media annua e pioggia totale annua, senza alcuna selezione richiesta.")
 
   temp_df = df.copy()
   temp_df["Anno"] = temp_df["Data_dt"].dt.year
 
-  annuale_globale = (
-      temp_df.groupby("Anno")
-      .agg({"Temperatura_Media_C": "mean", "Pioggia_mm": "sum"})
-      .reset_index()
-  )
+  annuale_globale = temp_df.groupby("Anno").agg({"Temperatura_Media_C": "mean", "Pioggia_mm": "sum"}).reset_index()
 
   if annuale_globale.empty:
     st.info("Nessun dato disponibile per generare i grafici annuali.")
   else:
-    fig_glob, (ax1_g, ax2_g) = plt.subplots(
-        2, 1, figsize=(8, 7), dpi=180, sharex=True
-    )
+    fig_glob, (ax1_g, ax2_g) = plt.subplots(2, 1, figsize=(8, 7), dpi=180, sharex=True)
 
-    ax1_g.plot(
-        annuale_globale["Anno"],
-        annuale_globale["Temperatura_Media_C"],
-        label="Temperatura Media Annua (°C)",
-        color="#2ca02c",
-        marker="o",
-        linewidth=2,
-        markersize=6,
-    )
-    ax1_g.set_title(
-        "Andamento Storico - Temperatura Media Annua & Pioggia Totale",
-        fontsize=12,
-        fontweight="bold",
-        pad=12,
-    )
+    ax1_g.plot(annuale_globale["Anno"], annuale_globale["Temperatura_Media_C"], label="Temperatura Media Annua (°C)", color="#2ca02c", marker="o", linewidth=2, markersize=6)
+    ax1_g.set_title("Andamento Storico - Temperatura Media Annua & Pioggia Totale", fontsize=12, fontweight="bold", pad=12)
     ax1_g.set_ylabel("Temperatura Media (°C)", fontsize=10)
     ax1_g.grid(True, linestyle="--", alpha=0.5)
     ax1_g.legend(loc="upper right", fontsize=8)
 
-    ax2_g.bar(
-        annuale_globale["Anno"],
-        annuale_globale["Pioggia_mm"],
-        label="Pioggia Totale Annua (mm)",
-        color="#1c83e1",
-        alpha=0.8,
-        width=0.6,
-    )
+    ax2_g.bar(annuale_globale["Anno"], annuale_globale["Pioggia_mm"], label="Pioggia Totale Annua (mm)", color="#1c83e1", alpha=0.8, width=0.6)
     ax2_g.set_xlabel("Anno", fontsize=10)
     ax2_g.set_ylabel("Pioggia Totale (mm)", fontsize=10)
     ax2_g.grid(True, linestyle="--", alpha=0.5)
@@ -1057,10 +788,7 @@ elif menu == "➕ Inserisci Misura":
   st.header("➕ Inserimento Manuale Dati (Area Riservata)")
 
   if not st.session_state["auth_ok"]:
-    pwd = st.text_input(
-        "Inserisci la password amministratore per sbloccare questa sezione:",
-        type="password",
-    )
+    pwd = st.text_input("Inserisci la password amministratore per sbloccare questa sezione:", type="password")
     if st.button("Accedi"):
       if pwd == admin_password:
         st.session_state["auth_ok"] = True
@@ -1078,16 +806,10 @@ elif menu == "➕ Inserisci Misura":
     col1, col2 = st.columns(2)
     with col1:
       data_ins = st.date_input("Data", datetime.today())
-      t_min = st.number_input(
-          "Temperatura Min (°C)", value=15.0, format="%.1f"
-      )
-      t_max = st.number_input(
-          "Temperatura Max (°C)", value=25.0, format="%.1f"
-      )
+      t_min = st.number_input("Temperatura Min (°C)", value=15.0, format="%.1f")
+      t_max = st.number_input("Temperatura Max (°C)", value=25.0, format="%.1f")
     with col2:
-      t_med = st.number_input(
-          "Temperatura Media (°C)", value=20.0, format="%.1f"
-      )
+      t_med = st.number_input("Temperatura Media (°C)", value=20.0, format="%.1f")
       hum = st.number_input("Umidità (%)", value=60.0, format="%.1f")
       rain = st.number_input("Pioggia (mm)", value=0.0, format="%.1f")
 
@@ -1106,20 +828,10 @@ elif menu == "➕ Inserisci Misura":
                         Pioggia_mm REAL
                     )
                 """)
-        cursor.execute(
-            """
+        cursor.execute("""
                     INSERT OR REPLACE INTO misurazioni (Data, Temperatura_Min_C, Temperatura_Max_C, Temperatura_Media_C, Umidita_Perc, Pioggia_mm)
                     VALUES (?, ?, ?, ?, ?, ?)
-                """,
-            (
-                data_ins.strftime("%Y-%m-%d"),
-                t_min,
-                t_max,
-                t_med,
-                hum,
-                rain,
-            ),
-        )
+                """, (data_ins.strftime("%Y-%m-%d"), t_min, t_max, t_med, hum, rain))
         conn.commit()
         conn.close()
         st.cache_data.clear()
@@ -1134,11 +846,7 @@ elif menu == "📁 Importa / Esporta Dati":
   st.header("📁 Gestione File & Backup (Area Riservata)")
 
   if not st.session_state["auth_ok"]:
-    pwd = st.text_input(
-        "Inserisci la password amministratore per sbloccare questa sezione:",
-        type="password",
-        key="pwd_import",
-    )
+    pwd = st.text_input("Inserisci la password amministratore per sbloccare questa sezione:", type="password", key="pwd_import")
     if st.button("Accedi", key="btn_import"):
       if pwd == admin_password:
         st.session_state["auth_ok"] = True
@@ -1153,9 +861,7 @@ elif menu == "📁 Importa / Esporta Dati":
     st.rerun()
 
   st.subheader("📥 Importa da file esterno")
-  uploaded_file = st.file_uploader(
-      "Carica file CSV o Excel", type=["csv", "xlsx", "xls"]
-  )
+  uploaded_file = st.file_uploader("Carica file CSV o Excel", type=["csv", "xlsx", "xls"])
   if uploaded_file is not None:
     try:
       if uploaded_file.name.endswith((".xlsx", ".xls")):
@@ -1167,19 +873,13 @@ elif menu == "📁 Importa / Esporta Dati":
       df_up.to_sql("misurazioni", conn, if_exists="replace", index=False)
       conn.close()
       st.cache_data.clear()
-      st.success(
-          "Database aggiornato con successo tramite il file caricato!"
-      )
+      st.success("Database aggiornato con successo tramite il file caricato!")
     except Exception as e:
       st.error(f"Errore nell'importazione: {e}")
 
   st.subheader("📤 Esporta database")
   if not df.empty:
-    csv_bytes = (
-        df.drop(columns=["Data_dt"], errors="ignore")
-        .to_csv(index=False)
-        .encode("utf-8")
-    )
+    csv_bytes = df.drop(columns=["Data_dt"], errors="ignore").to_csv(index=False).encode("utf-8")
     st.download_button(
         "Scarica dati in formato CSV",
         data=csv_bytes,
