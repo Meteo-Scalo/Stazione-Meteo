@@ -459,6 +459,24 @@ elif menu == "📅 Dati Giornalieri":
     st.info("Nessun dato trovato per il mese e anno selezionati.")
   else:
     st.subheader(f"📊 Riepilogo Estremi - {sel_mese_str} {sel_anno}")
+
+    # =========================================================================
+    # RIGA DI DIAGNOSTICA / SCOVA-ERRORI:
+    # Mostra a schermo se ci sono valori non numerici (es. testo, vuoti, virgole)
+    # in modo da individuare subito quale riga del DB sta bloccando il calcolo.
+    # =========================================================================
+    invalid_rows = m_data[
+        pd.to_numeric(m_data["Pioggia_mm"], errors="coerce").isna()
+        | pd.to_numeric(m_data["Temperatura_Max_C"], errors="coerce").isna()
+    ]
+    if not invalid_rows.empty:
+      st.error(
+          "⚠️ **Attenzione:** Trovate righe con valori non numerici nel"
+          " database per questo mese! Controlla i dati sottostanti:"
+      )
+      st.dataframe(invalid_rows[["Data", "Temperatura_Max_C", "Pioggia_mm"]])
+
+    # Calcolo standard rigoroso (se c'è un valore non numerico, fallirà qui facendoti vedere l'errore)
     tmax_max = m_data["Temperatura_Max_C"].max()
     tmin_min = m_data["Temperatura_Min_C"].min()
     tmed_mean = m_data["Temperatura_Media_C"].mean()
@@ -466,7 +484,7 @@ elif menu == "📅 Dati Giornalieri":
 
     hist_mese_data = df[df["Data_dt"].dt.month == sel_mese_num]
     hist_tmed_mean = hist_mese_data["Temperatura_Media_C"].mean()
-    delta_tmed = tmed_mean - hist_tmed_mean
+    delta_tmed = tmed_mean - hist_tmed_mean if not pd.isna(hist_tmed_mean) else 0.0
 
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Temp Max Assoluta", f"{tmax_max:.1f} °C")
@@ -482,6 +500,8 @@ elif menu == "📅 Dati Giornalieri":
     st.caption(
         f"💡 Media storica di {sel_mese_str} calcolata sul totale degli anni:"
         f" {hist_tmed_mean:.1f} °C"
+        if not pd.isna(hist_tmed_mean)
+        else ""
     )
 
     st.markdown("---")
@@ -620,6 +640,8 @@ elif menu == "📈 Dati Mensili":
   st.markdown(
       f"💡 **Media storica generale (tutti gli anni):**"
       f" {overall_hist_tmed:.1f} °C"
+      if not pd.isna(overall_hist_tmed)
+      else ""
   )
   st.dataframe(annual_df, use_container_width=True, hide_index=True)
 
@@ -765,7 +787,6 @@ elif menu == "📊 Grafici Annuali":
 
   temp_df = df.copy()
   temp_df["Anno"] = temp_df["Data_dt"].dt.year
-
   annuale_globale = (
       temp_df.groupby("Anno")
       .agg({"Temperatura_Media_C": "mean", "Pioggia_mm": "sum"})
