@@ -89,16 +89,16 @@ def fetch_wunderground_data(station_id, api_key):
     return None, f"Errore di connessione: {str(e)}"
 
 
-# Intestazione grafica ridotta in altezza tramite PIL
+# Intestazione grafica ridotta in altezza tagliando dalla parte superiore
 image_filename = "684225363_1433769152096303_7382692641941825555_n.png"
 if os.path.exists(image_filename):
   try:
     img = Image.open(image_filename)
     w, h = img.size
-    # Riduciamo l'altezza (es. portandola al 55% o 60% dell'originale).
-    # Puoi cambiare 0.55 se la vuoi più alta (es. 0.70) o più bassa (es. 0.45).
+    # Imposta l'altezza desiderata (es. 55% dell'originale).
+    # Puoi variare 0.55 se vuoi che siveda più o meno altezza.
     new_h = int(h * 0.55)
-    top = (h - new_h) // 2  # Taglio verticale centrato
+    top = 0  # Taglia partendo dall'alto
     img_cropped = img.crop((0, top, w, top + new_h))
     st.image(img_cropped, use_container_width=True)
   except Exception:
