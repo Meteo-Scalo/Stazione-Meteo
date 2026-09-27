@@ -154,7 +154,7 @@ else:
 # 1. DASHBOARD
 # ==========================================
 if menu == "📊 Dashboard":
-  # Verifica preliminare dello stato online per posizionare l'icona vicino al titolo
+  # Verifica preliminare dello stato online
   is_online = False
   wu_data, err_msg = None, "Credenziali mancanti"
   if wu_station_id and wu_api_key:
@@ -162,13 +162,17 @@ if menu == "📊 Dashboard":
     if wu_data and "observations" in wu_data and len(wu_data["observations"]) > 0:
       is_online = True
 
-  # Intestazione con titolo e stato compatto (icona verde/rossa) affiancati
-  col_t1, col_t2 = st.columns([6, 1])
-  with col_t1:
-    st.markdown("<h2>Condizioni in tempo reale</h2>", unsafe_allow_html=True)
-  with col_t2:
-    status_badge = "🟢 Online" if is_online else "🔴 Offline"
-    st.markdown(f"<div style='text-align: right; padding-top: 8px; font-weight: bold; font-size: 15px;'>{status_badge}</div>", unsafe_allow_html=True)
+  # Titolo e indicatore di stato affiancati e centrati
+  status_badge = "🟢 Online" if is_online else "🔴 Offline"
+  st.markdown(
+      f"""
+        <div style="display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 10px; margin-bottom: 20px;">
+            <h2 style="margin: 0; padding: 0;">Condizioni in tempo reale</h2>
+            <span style="font-weight: bold; font-size: 16px; white-space: nowrap;">{status_badge}</span>
+        </div>
+    """,
+      unsafe_allow_html=True,
+  )
 
   if is_online:
     try:
@@ -240,7 +244,7 @@ if menu == "📊 Dashboard":
       else:
         press_trend_str = "Stabile ➡️"
 
-      # 6 metriche distribuite su un'unica riga (senza duplicare lo stato)
+      # 6 metriche distribuite su un'unica riga
       col_l1, col_l2, col_l3, col_l4, col_l5, col_l6 = st.columns(6)
       with col_l1:
         st.metric(label="🌡️ Temperatura", value=temp_val)
@@ -262,7 +266,11 @@ if menu == "📊 Dashboard":
       with col_l6:
         st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
 
-      st.caption(f"Ultima rilevazione stazione: {obs_time}")
+      st.markdown(
+          f"<p style='text-align: center; color: gray;'>Ultima rilevazione"
+          f" stazione: {obs_time}</p>",
+          unsafe_allow_html=True,
+      )
 
     except Exception as e:
       st.warning(f"Errore nell'elaborazione dei dati meteo: {e}")
