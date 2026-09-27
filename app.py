@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 import io
 import os
 import matplotlib.pyplot as plt
@@ -198,30 +198,43 @@ if menu == "📊 Dashboard":
         except (ValueError, TypeError):
           pressure_val = "N.D."
 
-        # Calcolo dinamico del trend della pressione basato sulla lettura precedente
+        # Gestione storico pressione per il trend a 3 ore
+        if "pressure_history" not in st.session_state:
+          st.session_state["pressure_history"] = []
+
+        current_time = datetime.now()
         current_pressure = (
             float(pressure_raw) if pressure_raw is not None else None
         )
 
-        if "prev_pressure" not in st.session_state:
-          st.session_state["prev_pressure"] = current_pressure
+        if current_pressure is not None:
+          # Aggiungi la lettura corrente con il timestamp
+          st.session_state["pressure_history"].append(
+              (current_time, current_pressure)
+          )
 
-        if (
-            current_pressure is not None
-            and st.session_state["prev_pressure"] is not None
-        ):
-          diff = current_pressure - st.session_state["prev_pressure"]
-          if diff > 0.3:
+          # Rimuovi i dati più vecchi di 3 ore per mantenere solo la finestra temporale corretta
+          three_hours_ago = current_time - timedelta(hours=3)
+          st.session_state["pressure_history"] = [
+              (t, p)
+              for t, p in st.session_state["pressure_history"]
+              if t >= three_hours_ago
+          ]
+
+        # Calcolo del trend basato sulla variazione nelle ultime 3 ore
+        history = st.session_state["pressure_history"]
+        if len(history) >= 2 and current_pressure is not None:
+          oldest_pressure = history[0][1]
+          diff = current_pressure - oldest_pressure
+          # Soglia di ±0.6 hPa nell'arco delle 3 ore per determinare il trend
+          if diff > 0.6:
             press_trend_str = "In aumento 🟢 ↗️"
-          elif diff < -0.3:
+          elif diff < -0.6:
             press_trend_str = "In calo 🔴 ↘️"
           else:
             press_trend_str = "Stabile ➡️"
         else:
           press_trend_str = "Stabile ➡️"
-
-        if current_pressure is not None:
-          st.session_state["prev_pressure"] = current_pressure
 
         # Tutte le 7 metriche su un'unica riga
         col_l1, col_l2, col_l3, col_l4, col_l5, col_l6, col_l7 = st.columns(7)
