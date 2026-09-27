@@ -87,7 +87,11 @@ def fetch_wunderground_data(station_id, api_key):
     return None, f"Errore di connessione: {str(e)}"
 
 
-st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
+# Intestazione grafica con l'immagine personalizzata
+st.image(
+    "684225363_1433769152096303_7382692641941825555_n.jpg",
+    use_container_width=True,
+)
 
 df = load_data()
 
