@@ -82,7 +82,6 @@ def load_data():
     """)
   cursor.execute("SELECT COUNT(*) FROM previsioni")
   if cursor.fetchone()[0] == 0:
-    # Inseriamo 3 record di default se la tabella è vuota
     default_prev = [
         ("Oggi", 35.0, 20.0, "Soleggiato"),
         ("Venerdì 24", 35.0, 17.0, "Parzialmente soleggiato"),
@@ -133,113 +132,144 @@ def fetch_wunderground_data(station_id, api_key):
     return None, f"Errore di connessione: {str(e)}"
 
 
-# Funzione per disegnare un'icona meteo pulita e moderna
+# ==========================================
+# FUNZIONE ICONE METEO AVANZATE & DETTAGLIATE
+# ==========================================
 def draw_weather_icon(draw, cx, cy, desc_lower):
+  import math
+
   if "piogg" in desc_lower or "temporale" in desc_lower or "rovesci" in desc_lower:
-    # Nuvola con pioggia
-    draw.ellipse([cx - 45, cy - 25, cx + 45, cy + 15], fill="#B0C4DE", outline="#333333", width=2)
-    draw.line([cx - 20, cy + 25, cx - 25, cy + 45], fill="#0066CC", width=3)
-    draw.line([cx, cy + 25, cx - 5, cy + 45], fill="#0066CC", width=3)
-    draw.line([cx + 20, cy + 25, cx + 15, cy + 45], fill="#0066CC", width=3)
+    # Nuvola temporalesca/pioggia di qualità elevata
+    # Ombra nuvola
+    draw.ellipse([cx - 48, cy - 22, cx + 52, cy + 22], fill="#4A5568")
+    # Corpo nuvola principale
+    draw.ellipse([cx - 50, cy - 25, cx + 50, cy + 18], fill="#A0AEC0", outline="#2D3748", width=3)
+    draw.ellipse([cx - 30, cy - 40, cx + 30, cy + 5], fill="#CBD5E0", outline="#2D3748", width=3)
+    
+    if "temporale" in desc_lower:
+      # Saetta luminosa
+      points = [(cx - 5, cy + 15), (cx + 10, cy + 15), (cx - 2, cy + 32), (cx + 12, cy + 32), (cx - 10, cy + 55), (cx + 2, cy + 35), (cx - 8, cy + 35)]
+      draw.polygon(points, fill="#ECC94B", outline="#B7791F", width=2)
+    else:
+      # Gocce di pioggia multiple stilizzate
+      for dx in [-20, 0, 20]:
+        draw.ellipse([cx + dx - 4, cy + 22, cx + dx + 4, cy + 34], fill="#3182CE", outline="#2B6CB0", width=1)
+
   elif "neve" in desc_lower:
-    # Nuvola con neve
-    draw.ellipse([cx - 45, cy - 25, cx + 45, cy + 15], fill="#D3D3D3", outline="#333333", width=2)
-    draw.text((cx - 18, cy + 20), "❄️", fill="#333333")
+    draw.ellipse([cx - 50, cy - 25, cx + 50, cy + 18], fill="#E2E8F0", outline="#A0AEC0", width=3)
+    draw.text((cx - 15, cy + 18), "❄️", fill="#3182CE")
+
   elif "nuvol" in desc_lower or "coperto" in desc_lower:
-    # Nuvola
-    draw.ellipse([cx - 50, cy - 20, cx + 50, cy + 30], fill="#D0D0D0", outline="#333333", width=2)
+    # Nuvola soffice tridimensionale
+    draw.ellipse([cx - 52, cy - 22, cx + 48, cy + 22], fill="#CBD5E0")
+    draw.ellipse([cx - 50, cy - 25, cx + 50, cy + 18], fill="#EDF2F7", outline="#A0AEC0", width=3)
+    draw.ellipse([cx - 30, cy - 42, cx + 25, cy + 2], fill="#FFFFFF", outline="#A0AEC0", width=3)
+
   elif "variabil" in desc_lower or "schiarite" in desc_lower or "parzialmente" in desc_lower:
-    # Sole parzialmente coperto
-    draw.ellipse([cx - 30, cy - 35, cx + 20, cy + 15], fill="#FFCC00", outline="#333333", width=2)
-    draw.ellipse([cx - 20, cy - 10, cx + 45, cy + 30], fill="#EAEAEA", outline="#333333", width=2)
-  else:
-    # Sole splendente
-    draw.ellipse([cx - 35, cy - 35, cx + 35, cy + 35], fill="#FF9900", outline="#333333", width=2)
+    # Sole parzialmente coperto da nuvola
+    # Raggi e corpo sole sullo sfondo
     for angle in range(0, 360, 45):
-      import math
+      rad = math.radians(angle)
+      x1 = cx - 10 + int(35 * math.cos(rad))
+      y1 = cy - 10 + int(35 * math.sin(rad))
+      x2 = cx - 10 + int(45 * math.cos(rad))
+      y2 = cy - 10 + int(45 * math.sin(rad))
+      draw.line([x1, y1, x2, y2], fill="#ED8936", width=4)
+    draw.ellipse([cx - 35, cy - 45, cx + 15, cy + 5], fill="#F6AD55", outline="#DD6B20", width=2)
+    # Nuvola in primo piano
+    draw.ellipse([cx - 20, cy - 10, cx + 52, cy + 32], fill="#EDF2F7", outline="#718096", width=3)
+
+  else:
+    # Sole splendente di alta qualità con raggi sfumati ed espressivo
+    for angle in range(0, 360, 45):
       rad = math.radians(angle)
       x1 = cx + int(42 * math.cos(rad))
       y1 = cy + int(42 * math.sin(rad))
-      x2 = cx + int(52 * math.cos(rad))
-      y2 = cy + int(52 * math.sin(rad))
-      draw.line([x1, y1, x2, y2], fill="#FF9900", width=3)
+      x2 = cx + int(58 * math.cos(rad))
+      y2 = cy + int(58 * math.sin(rad))
+      draw.line([x1, y1, x2, y2], fill="#DD6B20", width=5)
+    
+    # Cerchio esterno e interno del sole
+    draw.ellipse([cx - 38, cy - 38, cx + 38, cy + 38], fill="#DD6B20")
+    draw.ellipse([cx - 35, cy - 35, cx + 35, cy + 35], fill="#ED8936")
+    draw.ellipse([cx - 30, cy - 30, cx + 30, cy + 30], fill="#F6E05E")
 
 
-# Funzione per generare l'infografica in stile card moderne (4:5)
+# ==========================================
+# GENERAZIONE INFOGRAFICA STILE CARD PREMIUM
+# ==========================================
 def create_comic_infographic(f_df):
   width, height = 1080, 1350
-  # Sfondo elegante blu notte / cielo stellato sfumato
-  img = Image.new("RGB", (width, height), color="#0D1B2A")
+  # Sfondo notte stellata profonda ed elegante
+  img = Image.new("RGB", (width, height), color="#0F172A")
   draw = ImageDraw.Draw(img)
 
   # Caricamento font sicuri
   try:
-    font_title = ImageFont.truetype("arial.ttf", 44)
-    font_sub = ImageFont.truetype("arial.ttf", 24)
-    font_card_title = ImageFont.truetype("arial.ttf", 32)
-    font_card_big = ImageFont.truetype("arial.ttf", 56)
-    font_card_text = ImageFont.truetype("arial.ttf", 22)
-    font_small = ImageFont.truetype("arial.ttf", 20)
+    font_title = ImageFont.truetype("arial.ttf", 46)
+    font_sub = ImageFont.truetype("arial.ttf", 26)
+    font_card_title = ImageFont.truetype("arial.ttf", 34)
+    font_card_big = ImageFont.truetype("arial.ttf", 64)
+    font_card_text = ImageFont.truetype("arial.ttf", 24)
   except:
     font_title = ImageFont.load_default()
     font_sub = ImageFont.load_default()
     font_card_title = ImageFont.load_default()
     font_card_big = ImageFont.load_default()
     font_card_text = ImageFont.load_default()
-    font_small = ImageFont.load_default()
 
   # Intestazione superiore
-  draw.text((width / 2, 60), "METEO MONTEROTONDO SCALO", fill="#FFFFFF", font=font_title, anchor="mm")
+  draw.text((width / 2, 65), "METEO MONTEROTONDO SCALO", fill="#FFFFFF", font=font_title, anchor="mm")
   today_str = datetime.now().strftime("Aggiornato al %A %d %B %Y").capitalize()
-  draw.text((width / 2, 115), today_str, fill="#A0C4FF", font=font_sub, anchor="mm")
+  draw.text((width / 2, 125), today_str, fill="#38BDF8", font=font_sub, anchor="mm")
 
   if f_df.empty:
     return img
 
-  # Dividiamo in: Card principale a sinistra (Oggi) e 3 card a destra per gli altri giorni
   # 1. Card Principale Sinistra (Oggi)
   oggi_row = f_df.iloc[0]
-  card_oggi_box = [60, 170, 500, 1280]
-  draw.rounded_rectangle(card_oggi_box, radius=25, fill="#EAEAEA", outline="#415A77", width=4)
+  card_oggi_box = [50, 180, 510, 1300]
+  # Effetto vetro / card metallizzata scura e raffinata
+  draw.rounded_rectangle(card_oggi_box, radius=30, fill="#1E293B", outline="#475569", width=4)
 
   # Intestazione Card Oggi
-  draw.text((280, 220), str(oggi_row["Giorno_Label"]).upper(), fill="#1B263B", font=font_card_title, anchor="mm")
+  draw.text((280, 235), str(oggi_row["Giorno_Label"]).upper(), fill="#F8FAFC", font=font_card_title, anchor="mm")
   
   # Temperatura grande
   temp_str = f"{oggi_row['Temp_Max']:.0f}°C"
-  draw.text((280, 330), temp_str, fill="#1B263B", font=font_card_big, anchor="mm")
+  draw.text((280, 345), temp_str, fill="#38BDF8", font=font_card_big, anchor="mm")
 
   # Icona meteo centrale grande in evidenza
-  draw_weather_icon(draw, 280, 550, str(oggi_row["Descrizione"]).lower())
+  draw_weather_icon(draw, 280, 570, str(oggi_row["Descrizione"]).lower())
 
   # Dettagli Minima e Condizioni nella card principale
-  draw.text((280, 750), f"Minima: {oggi_row['Temp_Min']:.1f}°C", fill="#333333", font=font_card_text, anchor="mm")
-  draw.text((280, 820), f"Condizioni: {oggi_row['Descrizione']}", fill="#1B263B", font=font_card_title, anchor="mm")
+  draw.text((280, 780), f"Minima: {oggi_row['Temp_Min']:.1f}°C", fill="#94A3B8", font=font_card_text, anchor="mm")
+  draw.text((280, 850), f"Condizioni: {oggi_row['Descrizione']}", fill="#F1F5F9", font=font_card_title, anchor="mm")
 
   # 2. Tre Card Laterali a Destra (Giorni successivi)
-  right_cards_y = [170, 540, 910]
-  card_height = 340
-  rx1, rx2 = 540, 1020
+  right_cards_y = [180, 555, 930]
+  card_height = 345
+  rx1, rx2 = 540, 1030
 
   for i in range(1, min(len(f_df), 4)):
     row = f_df.iloc[i]
     ry = right_cards_y[i - 1]
     
-    # Sfondo card destra
-    draw.rounded_rectangle([rx1, ry, rx2, ry + card_height], radius=20, fill="#EAEAEA", outline="#415A77", width=3)
+    # Sfondo card destra in stile dark card
+    draw.rounded_rectangle([rx1, ry, rx2, ry + card_height], radius=24, fill="#1E293B", outline="#475569", width=3)
 
     # Etichetta giorno
-    draw.text((rx1 + 35, ry + 35), str(row["Giorno_Label"]).upper(), fill="#1B263B", font=font_card_title)
+    draw.text((rx1 + 40, ry + 40), str(row["Giorno_Label"]).upper(), fill="#F8FAFC", font=font_card_title)
 
     # Temperature
     t_str = f"{row['Temp_Max']:.0f}°C / {row['Temp_Min']:.0f}°C"
-    draw.text((rx1 + 35, ry + 95), t_str, fill="#1B263B", font=font_card_title)
+    draw.text((rx1 + 40, ry + 105), t_str, fill="#38BDF8", font=font_card_title)
 
     # Descrizione
-    draw.text((rx1 + 35, ry + 160), str(row["Descrizione"]), fill="#333333", font=font_card_text)
+    draw.text((rx1 + 40, ry + 175), str(row["Descrizione"]), fill="#94A3B8", font=font_card_text)
 
-    # Icona meteo a destra nella card
-    draw_weather_icon(draw, rx2 - 100, ry + 180, str(row["Descrizione"]).lower())
+    # Icona meteo avanzata a destra nella card
+    draw_weather_icon(draw, rx2 - 110, ry + 190, str(row["Descrizione"]).lower())
 
   return img
 
@@ -281,7 +311,6 @@ menu = st.sidebar.radio(
 if "auth_ok" not in st.session_state:
   st.session_state["auth_ok"] = False
 
-# Lettura sicura delle credenziali Weather Underground e della password admin dai Secrets
 try:
   wu_station_id = str(st.secrets["wunderground"]["station_id"])
   wu_api_key = str(st.secrets["wunderground"]["api_key"])
@@ -338,7 +367,6 @@ if menu == "📊 Dashboard":
         except (ValueError, TypeError):
           pressure_val = "N.D."
 
-        # Gestione storico pressione per il trend a 3 ore
         if "pressure_history" not in st.session_state:
           st.session_state["pressure_history"] = []
 
@@ -452,7 +480,7 @@ if menu == "📊 Dashboard":
     col_b.metric("Temperatura Min Assoluta", f"{abs_min_val:.1f} °C", f"Data: {abs_min_date}")
 
 # ==========================================
-# 2. PREVISIONI METEO (STILE CARD MODERNE)
+# 2. PREVISIONI METEO (STILE CARD PREMIUM)
 # ==========================================
 elif menu == "🔮 Previsioni Meteo":
   st.header("🔮 Previsioni Meteo (Prossimi 3 Giorni)")
@@ -461,7 +489,6 @@ elif menu == "🔮 Previsioni Meteo":
   f_df = load_forecasts()
 
   if not f_df.empty:
-    # Visualizzazione metriche riassuntive
     cols = st.columns(len(f_df))
     for i, row in f_df.iterrows():
       with cols[i]:
@@ -474,22 +501,20 @@ elif menu == "🔮 Previsioni Meteo":
         st.caption(row["Descrizione"])
 
     st.markdown("---")
-    st.subheader("🎨 Infografica in Stile Card per Instagram (4:5)")
-    st.write("Anteprima dell'infografica con layout a card (stile moderno/vetro) generata automaticamente:")
+    st.subheader("🎨 Infografica in Stile Card Premium (4:5)")
+    st.write("Anteprima dell'infografica con icone avanzate e layout a card in stile moderno:")
 
-    # Generazione e visualizzazione infografica stile card
     comic_img = create_comic_infographic(f_df)
     st.image(comic_img, use_container_width=True)
 
-    # Pulsante download infografica
     buf_fc = io.BytesIO()
     comic_img.save(buf_fc, format="png")
     buf_fc.seek(0)
 
     st.download_button(
-        label="📥 Scarica Infografica Stile Card (PNG 4:5)",
+        label="📥 Scarica Infografica Stile Card Premium (PNG 4:5)",
         data=buf_fc,
-        file_name="previsioni_meteo_card.png",
+        file_name="previsioni_meteo_card_premium.png",
         mime="image/png",
     )
 
@@ -511,7 +536,7 @@ elif menu == "🔮 Previsioni Meteo":
       st.rerun()
 
     with st.form("form_modifica_previsioni"):
-      st.write("Aggiorna i dati per i giorni successivi (le icone nell'infografica si adatteranno alle parole chiave come 'pioggia', 'neve', 'nuvoloso', 'sole'):")
+      st.write("Aggiorna i dati per i giorni successivi:")
       updated_rows = []
 
       current_f = load_forecasts()
@@ -615,7 +640,6 @@ elif menu == "📅 Dati Giornalieri":
 
     st.markdown("---")
     st.subheader("📱 Grafico Formato Instagram (4:5) - Temperatura & Pioggia")
-    st.write("Confronto tra la temperatura media misurata e la media storica insieme al grafico a barre delle precipitazioni giornaliere.")
 
     hist_prev = df[(df["Data_dt"].dt.month == sel_mese_num) & (df["Data_dt"].dt.year < sel_anno)]
     if hist_prev.empty:
@@ -704,9 +728,7 @@ elif menu == "📈 Dati Mensili":
 
   if not annual_df.empty:
     st.markdown("---")
-    st.subheader("📱 Grafico Annuale Formato Instagram (4:5) - Temperatura & Pioggia")
-    st.write("Confronto tra la temperatura media mensile misurata nell'anno selezionato e la media storica, insieme al totale delle piogge mensili.")
-
+    st.subheader("📱 Grafico Annuale Formato Instagram (4:5)")
     anni_disponibili = annual_df["Anno"].tolist()
     default_grafico_idx = anni_disponibili.index(current_year) if current_year in anni_disponibili else (len(anni_disponibili) - 1 if anni_disponibili else 0)
 
@@ -766,7 +788,7 @@ elif menu == "📈 Dati Mensili":
 # ==========================================
 elif menu == "📊 Grafici Annuali":
   st.header("Grafici Annuali Globali (Temperatura & Pioggia)")
-  st.write("Panoramica complessiva di tutti gli anni registrati nel database: temperatura media annua e pioggia totale annua, senza alcuna selezione richiesta.")
+  st.write("Panoramica complessiva di tutti gli anni registrati nel database.")
 
   temp_df = df.copy()
   temp_df["Anno"] = temp_df["Data_dt"].dt.year
