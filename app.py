@@ -84,9 +84,9 @@ def load_data():
   if cursor.fetchone()[0] == 0:
     # Inseriamo 3 record di default se la tabella è vuota
     default_prev = [
-        ("Oggi", 24.0, 14.0, "Sereno o poco nuvoloso"),
-        ("Domani", 25.0, 15.0, "Variabile con possibili piogge"),
-        ("Dopodomani", 23.0, 13.0, "Nuvoloso con neve sui monti"),
+        ("Oggi", 35.0, 20.0, "Soleggiato"),
+        ("Venerdì 24", 35.0, 17.0, "Parzialmente soleggiato"),
+        ("Sabato 25", 35.0, 21.0, "Parzialmente soleggiato"),
     ]
     cursor.executemany(
         """
@@ -133,88 +133,113 @@ def fetch_wunderground_data(station_id, api_key):
     return None, f"Errore di connessione: {str(e)}"
 
 
-# Funzione per generare l'infografica in stile fumetto (4:5)
+# Funzione per disegnare un'icona meteo pulita e moderna
+def draw_weather_icon(draw, cx, cy, desc_lower):
+  if "piogg" in desc_lower or "temporale" in desc_lower or "rovesci" in desc_lower:
+    # Nuvola con pioggia
+    draw.ellipse([cx - 45, cy - 25, cx + 45, cy + 15], fill="#B0C4DE", outline="#333333", width=2)
+    draw.line([cx - 20, cy + 25, cx - 25, cy + 45], fill="#0066CC", width=3)
+    draw.line([cx, cy + 25, cx - 5, cy + 45], fill="#0066CC", width=3)
+    draw.line([cx + 20, cy + 25, cx + 15, cy + 45], fill="#0066CC", width=3)
+  elif "neve" in desc_lower:
+    # Nuvola con neve
+    draw.ellipse([cx - 45, cy - 25, cx + 45, cy + 15], fill="#D3D3D3", outline="#333333", width=2)
+    draw.text((cx - 18, cy + 20), "❄️", fill="#333333")
+  elif "nuvol" in desc_lower or "coperto" in desc_lower:
+    # Nuvola
+    draw.ellipse([cx - 50, cy - 20, cx + 50, cy + 30], fill="#D0D0D0", outline="#333333", width=2)
+  elif "variabil" in desc_lower or "schiarite" in desc_lower or "parzialmente" in desc_lower:
+    # Sole parzialmente coperto
+    draw.ellipse([cx - 30, cy - 35, cx + 20, cy + 15], fill="#FFCC00", outline="#333333", width=2)
+    draw.ellipse([cx - 20, cy - 10, cx + 45, cy + 30], fill="#EAEAEA", outline="#333333", width=2)
+  else:
+    # Sole splendente
+    draw.ellipse([cx - 35, cy - 35, cx + 35, cy + 35], fill="#FF9900", outline="#333333", width=2)
+    for angle in range(0, 360, 45):
+      import math
+      rad = math.radians(angle)
+      x1 = cx + int(42 * math.cos(rad))
+      y1 = cy + int(42 * math.sin(rad))
+      x2 = cx + int(52 * math.cos(rad))
+      y2 = cy + int(52 * math.sin(rad))
+      draw.line([x1, y1, x2, y2], fill="#FF9900", width=3)
+
+
+# Funzione per generare l'infografica in stile card moderne (4:5)
 def create_comic_infographic(f_df):
-  # Dimensioni Instagram 4:5 (es. 1080 x 1350)
   width, height = 1080, 1350
-  img = Image.new("RGB", (width, height), color="#FFF9E6")  # Sfondo carta giallina chiaro stile fumetto
+  # Sfondo elegante blu notte / cielo stellato sfumato
+  img = Image.new("RGB", (width, height), color="#0D1B2A")
   draw = ImageDraw.Draw(img)
 
-  # Cornice esterna spessa stile fumetto
-  draw.rectangle([20, 20, width - 20, height - 20], outline="#111111", width=8)
-
-  # Titolo principale
-  draw.rectangle([50, 50, width - 50, 180], fill="#FFD700", outline="#111111", width=5)
+  # Caricamento font sicuri
   try:
-    font_title = ImageFont.truetype("arial.ttf", 46)
+    font_title = ImageFont.truetype("arial.ttf", 44)
     font_sub = ImageFont.truetype("arial.ttf", 24)
-    font_panel_title = ImageFont.truetype("arial.ttf", 36)
-    font_panel_text = ImageFont.truetype("arial.ttf", 26)
+    font_card_title = ImageFont.truetype("arial.ttf", 32)
+    font_card_big = ImageFont.truetype("arial.ttf", 56)
+    font_card_text = ImageFont.truetype("arial.ttf", 22)
+    font_small = ImageFont.truetype("arial.ttf", 20)
   except:
     font_title = ImageFont.load_default()
     font_sub = ImageFont.load_default()
-    font_panel_title = ImageFont.load_default()
-    font_panel_text = ImageFont.load_default()
+    font_card_title = ImageFont.load_default()
+    font_card_big = ImageFont.load_default()
+    font_card_text = ImageFont.load_default()
+    font_small = ImageFont.load_default()
 
-  draw.text((width / 2, 85), "⚡ PREVISIONI METEO ⚡", fill="#111111", font=font_title, anchor="mm")
-  draw.text((width / 2, 135), "Stazione Monterotondo Scalo", fill="#333333", font=font_sub, anchor="mm")
+  # Intestazione superiore
+  draw.text((width / 2, 60), "METEO MONTEROTONDO SCALO", fill="#FFFFFF", font=font_title, anchor="mm")
+  today_str = datetime.now().strftime("Aggiornato al %A %d %B %Y").capitalize()
+  draw.text((width / 2, 115), today_str, fill="#A0C4FF", font=font_sub, anchor="mm")
 
-  # Pannelli per i 3 giorni
-  panel_y_starts = [220, 580, 940]
-  panel_height = 320
+  if f_df.empty:
+    return img
 
-  for i, row in f_df.iterrows():
-    if i >= 3:
-      break
-    py = panel_y_starts[i]
+  # Dividiamo in: Card principale a sinistra (Oggi) e 3 card a destra per gli altri giorni
+  # 1. Card Principale Sinistra (Oggi)
+  oggi_row = f_df.iloc[0]
+  card_oggi_box = [60, 170, 500, 1280]
+  draw.rounded_rectangle(card_oggi_box, radius=25, fill="#EAEAEA", outline="#415A77", width=4)
+
+  # Intestazione Card Oggi
+  draw.text((280, 220), str(oggi_row["Giorno_Label"]).upper(), fill="#1B263B", font=font_card_title, anchor="mm")
+  
+  # Temperatura grande
+  temp_str = f"{oggi_row['Temp_Max']:.0f}°C"
+  draw.text((280, 330), temp_str, fill="#1B263B", font=font_card_big, anchor="mm")
+
+  # Icona meteo centrale grande in evidenza
+  draw_weather_icon(draw, 280, 550, str(oggi_row["Descrizione"]).lower())
+
+  # Dettagli Minima e Condizioni nella card principale
+  draw.text((280, 750), f"Minima: {oggi_row['Temp_Min']:.1f}°C", fill="#333333", font=font_card_text, anchor="mm")
+  draw.text((280, 820), f"Condizioni: {oggi_row['Descrizione']}", fill="#1B263B", font=font_card_title, anchor="mm")
+
+  # 2. Tre Card Laterali a Destra (Giorni successivi)
+  right_cards_y = [170, 540, 910]
+  card_height = 340
+  rx1, rx2 = 540, 1020
+
+  for i in range(1, min(len(f_df), 4)):
+    row = f_df.iloc[i]
+    ry = right_cards_y[i - 1]
     
-    # Sfondo riquadro fumetto
-    panel_bg = "#FFFFFF" if i % 2 == 0 else "#E6F2FF"
-    draw.rectangle([60, py, width - 60, py + panel_height], fill=panel_bg, outline="#111111", width=5)
+    # Sfondo card destra
+    draw.rounded_rectangle([rx1, ry, rx2, ry + card_height], radius=20, fill="#EAEAEA", outline="#415A77", width=3)
 
-    # Etichetta giorno (es. OGGI)
-    draw.rectangle([90, py - 20, 320, py + 30], fill="#FF4500", outline="#111111", width=3)
-    draw.text((205, py + 5), str(row["Giorno_Label"]).upper(), fill="#FFFFFF", font=font_panel_title, anchor="mm")
+    # Etichetta giorno
+    draw.text((rx1 + 35, ry + 35), str(row["Giorno_Label"]).upper(), fill="#1B263B", font=font_card_title)
 
-    # Determina il tipo di icona in base alla descrizione
-    desc_lower = str(row["Descrizione"]).lower()
-    
-    # Disegno icona meteo stilizzata a sinistra nel pannello
-    icon_center_x, icon_center_y = 180, py + 180
-    if "piogg" in desc_lower or "temporale" in desc_lower or "rovesci" in desc_lower:
-      # Icona Pioggia: Nuvola grigia con gocce blu
-      draw.ellipse([icon_center_x - 60, icon_center_y - 40, icon_center_x + 60, icon_center_y + 10], fill="#B0C4DE", outline="#111111", width=3)
-      draw.line([icon_center_x - 30, icon_center_y + 20, icon_center_x - 40, icon_center_y + 60], fill="#0000FF", width=4)
-      draw.line([icon_center_x, icon_center_y + 20, icon_center_x - 10, icon_center_y + 60], fill="#0000FF", width=4)
-      draw.line([icon_center_x + 30, icon_center_y + 20, icon_center_x + 20, icon_center_y + 60], fill="#0000FF", width=4)
-      weather_icon_name = "PIOGGIA"
-    elif "neve" in desc_lower:
-      # Icona Neve: Nuvola con fiocchi
-      draw.ellipse([icon_center_x - 60, icon_center_y - 40, icon_center_x + 60, icon_center_y + 10], fill="#D3D3D3", outline="#111111", width=3)
-      draw.text((icon_center_x - 20, icon_center_y + 20), "❄️ ❄️", fill="#111111", font=font_panel_text)
-      weather_icon_name = "NEVE"
-    elif "nuvol" in desc_lower or "coperto" in desc_lower:
-      # Icona Nuvoloso
-      draw.ellipse([icon_center_x - 70, icon_center_y - 20, icon_center_x + 70, icon_center_y + 40], fill="#C0C0C0", outline="#111111", width=3)
-      weather_icon_name = "NUVOLOSO"
-    elif "variabil" in desc_lower or "schiarite" in desc_lower:
-      # Icona Variabile (Sole + Nuvola)
-      draw.ellipse([icon_center_x - 30, icon_center_y - 50, icon_center_x + 50, icon_center_y + 30], fill="#FFD700", outline="#111111", width=3)
-      draw.ellipse([icon_center_x - 50, icon_center_y - 10, icon_center_x + 50, icon_center_y + 50], fill="#E0E0E0", outline="#111111", width=3)
-      weather_icon_name = "VARIABILE"
-    else:
-      # Icona Sole
-      draw.ellipse([icon_center_x - 50, icon_center_y - 50, icon_center_x + 50, icon_center_y + 50], fill="#FF8C00", outline="#111111", width=4)
-      weather_icon_name = "SOLE"
+    # Temperature
+    t_str = f"{row['Temp_Max']:.0f}°C / {row['Temp_Min']:.0f}°C"
+    draw.text((rx1 + 35, ry + 95), t_str, fill="#1B263B", font=font_card_title)
 
-    # Testo Temperature
-    tmax_str = f"MAX: {row['Temp_Max']:.1f}°C"
-    tmin_str = f"MIN: {row['Temp_Min']:.1f}°C"
-    draw.text((360, py + 80), tmax_str, fill="#CC0000", font=font_panel_title)
-    draw.text((360, py + 130), tmin_str, fill="#0000CC", font=font_panel_title)
+    # Descrizione
+    draw.text((rx1 + 35, ry + 160), str(row["Descrizione"]), fill="#333333", font=font_card_text)
 
-    # Testo Descrizione
-    draw.text((360, py + 190), f"Condizioni: {row['Descrizione']}", fill="#222222", font=font_panel_text)
+    # Icona meteo a destra nella card
+    draw_weather_icon(draw, rx2 - 100, ry + 180, str(row["Descrizione"]).lower())
 
   return img
 
@@ -427,7 +452,7 @@ if menu == "📊 Dashboard":
     col_b.metric("Temperatura Min Assoluta", f"{abs_min_val:.1f} °C", f"Data: {abs_min_date}")
 
 # ==========================================
-# 2. PREVISIONI METEO (STILE FUMETTO / ICONE)
+# 2. PREVISIONI METEO (STILE CARD MODERNE)
 # ==========================================
 elif menu == "🔮 Previsioni Meteo":
   st.header("🔮 Previsioni Meteo (Prossimi 3 Giorni)")
@@ -449,22 +474,22 @@ elif menu == "🔮 Previsioni Meteo":
         st.caption(row["Descrizione"])
 
     st.markdown("---")
-    st.subheader("🎨 Infografica in Stile Fumetto per Instagram (4:5)")
-    st.write("Anteprima dell'infografica in stile fumetto generata automaticamente con icone e pannelli dedicati:")
+    st.subheader("🎨 Infografica in Stile Card per Instagram (4:5)")
+    st.write("Anteprima dell'infografica con layout a card (stile moderno/vetro) generata automaticamente:")
 
-    # Generazione e visualizzazione infografica stile fumetto
+    # Generazione e visualizzazione infografica stile card
     comic_img = create_comic_infographic(f_df)
     st.image(comic_img, use_container_width=True)
 
-    # Pulsante download infografica stile fumetto
+    # Pulsante download infografica
     buf_fc = io.BytesIO()
     comic_img.save(buf_fc, format="png")
     buf_fc.seek(0)
 
     st.download_button(
-        label="📥 Scarica Infografica Stile Fumetto (PNG 4:5)",
+        label="📥 Scarica Infografica Stile Card (PNG 4:5)",
         data=buf_fc,
-        file_name="previsioni_meteo_fumetto.png",
+        file_name="previsioni_meteo_card.png",
         mime="image/png",
     )
 
@@ -486,7 +511,7 @@ elif menu == "🔮 Previsioni Meteo":
       st.rerun()
 
     with st.form("form_modifica_previsioni"):
-      st.write("Aggiorna i dati per i 3 giorni (le icone nell'infografica si adatteranno alle parole chiave come 'pioggia', 'neve', 'nuvoloso', 'sole'):")
+      st.write("Aggiorna i dati per i giorni successivi (le icone nell'infografica si adatteranno alle parole chiave come 'pioggia', 'neve', 'nuvoloso', 'sole'):")
       updated_rows = []
 
       current_f = load_forecasts()
