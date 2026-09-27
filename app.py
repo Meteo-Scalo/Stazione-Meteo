@@ -22,8 +22,8 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-    /* Centratura di titoli e sottotitoli */
-    h1, h2, h3, h4 {
+    /* Centratura di titoli e sottotitoli tranne dove diversamente specificato */
+    h2, h3, h4 {
         text-align: center;
     }
     
@@ -154,126 +154,129 @@ else:
 # 1. DASHBOARD
 # ==========================================
 if menu == "📊 Dashboard":
-  st.header("Condizioni in tempo reale")
-
+  # Verifica preliminare dello stato online per posizionare l'icona vicino al titolo
+  is_online = False
+  wu_data, err_msg = None, "Credenziali mancanti"
   if wu_station_id and wu_api_key:
     wu_data, err_msg = fetch_wunderground_data(wu_station_id, wu_api_key)
-    if (
-        wu_data
-        and "observations" in wu_data
-        and len(wu_data["observations"]) > 0
-    ):
-      try:
-        obs = wu_data["observations"][0]
-        metric = obs.get("metric", {})
+    if wu_data and "observations" in wu_data and len(wu_data["observations"]) > 0:
+      is_online = True
 
-        temp_raw = metric.get("temp")
-        heat_raw = metric.get("heatIndex")
-        wind_chill_raw = metric.get("windChill")
-        feels_raw = (
-            heat_raw
-            if heat_raw is not None
-            else (
-                wind_chill_raw if wind_chill_raw is not None else temp_raw
-            )
-        )
+  # Intestazione con titolo e stato compatto (icona verde/rossa) affiancati
+  col_t1, col_t2 = st.columns([6, 1])
+  with col_t1:
+    st.markdown("<h2>Condizioni in tempo reale</h2>", unsafe_allow_html=True)
+  with col_t2:
+    status_badge = "🟢 Online" if is_online else "🔴 Offline"
+    st.markdown(f"<div style='text-align: right; padding-top: 8px; font-weight: bold; font-size: 15px;'>{status_badge}</div>", unsafe_allow_html=True)
 
-        hum_val = obs.get("humidity", "N.D.")
-        pressure_raw = metric.get("pressure", "N.D.")
-        rain_val = obs.get("precipTotal", 0.0)
-        obs_time = obs.get("obsTimeLocal", "Aggiornato di recente")
+  if is_online:
+    try:
+      obs = wu_data["observations"][0]
+      metric = obs.get("metric", {})
 
-        try:
-          temp_val = f"{float(temp_raw):.1f} °C"
-        except (ValueError, TypeError):
-          temp_val = "N.D."
-
-        try:
-          feels_val = f"{float(feels_raw):.1f} °C"
-        except (ValueError, TypeError):
-          feels_val = "N.D."
-
-        try:
-          pressure_val = f"{float(pressure_raw):.1f} hPa"
-        except (ValueError, TypeError):
-          pressure_val = "N.D."
-
-        # Gestione storico pressione per il trend a 3 ore
-        if "pressure_history" not in st.session_state:
-          st.session_state["pressure_history"] = []
-
-        current_time = datetime.now()
-        current_pressure = (
-            float(pressure_raw) if pressure_raw is not None else None
-        )
-
-        if current_pressure is not None:
-          # Aggiungi la lettura corrente con il timestamp
-          st.session_state["pressure_history"].append(
-              (current_time, current_pressure)
+      temp_raw = metric.get("temp")
+      heat_raw = metric.get("heatIndex")
+      wind_chill_raw = metric.get("windChill")
+      feels_raw = (
+          heat_raw
+          if heat_raw is not None
+          else (
+              wind_chill_raw if wind_chill_raw is not None else temp_raw
           )
+      )
 
-          # Rimuovi i dati più vecchi di 3 ore per mantenere solo la finestra temporale corretta
-          three_hours_ago = current_time - timedelta(hours=3)
-          st.session_state["pressure_history"] = [
-              (t, p)
-              for t, p in st.session_state["pressure_history"]
-              if t >= three_hours_ago
-          ]
+      hum_val = obs.get("humidity", "N.D.")
+      pressure_raw = metric.get("pressure", "N.D.")
+      rain_val = obs.get("precipTotal", 0.0)
+      obs_time = obs.get("obsTimeLocal", "Aggiornato di recente")
 
-        # Calcolo del trend basato sulla variazione nelle ultime 3 ore
-        history = st.session_state["pressure_history"]
-        if len(history) >= 2 and current_pressure is not None:
-          oldest_pressure = history[0][1]
-          diff = current_pressure - oldest_pressure
-          # Soglia di ±0.6 hPa nell'arco delle 3 ore per determinare il trend
-          if diff > 0.6:
-            press_trend_str = "In aumento 🟢 ↗️"
-          elif diff < -0.6:
-            press_trend_str = "In calo 🔴 ↘️"
-          else:
-            press_trend_str = "Stabile ➡️"
+      try:
+        temp_val = f"{float(temp_raw):.1f} °C"
+      except (ValueError, TypeError):
+        temp_val = "N.D."
+
+      try:
+        feels_val = f"{float(feels_raw):.1f} °C"
+      except (ValueError, TypeError):
+        feels_val = "N.D."
+
+      try:
+        pressure_val = f"{float(pressure_raw):.1f} hPa"
+      except (ValueError, TypeError):
+        pressure_val = "N.D."
+
+      # Gestione storico pressione per il trend a 3 ore
+      if "pressure_history" not in st.session_state:
+        st.session_state["pressure_history"] = []
+
+      current_time = datetime.now()
+      current_pressure = (
+          float(pressure_raw) if pressure_raw is not None else None
+      )
+
+      if current_pressure is not None:
+        st.session_state["pressure_history"].append(
+            (current_time, current_pressure)
+        )
+
+        three_hours_ago = current_time - timedelta(hours=3)
+        st.session_state["pressure_history"] = [
+            (t, p)
+            for t, p in st.session_state["pressure_history"]
+            if t >= three_hours_ago
+        ]
+
+      history = st.session_state["pressure_history"]
+      if len(history) >= 2 and current_pressure is not None:
+        oldest_pressure = history[0][1]
+        diff = current_pressure - oldest_pressure
+        if diff > 0.6:
+          press_trend_str = "In aumento 🟢 ↗️"
+        elif diff < -0.6:
+          press_trend_str = "In calo 🔴 ↘️"
         else:
           press_trend_str = "Stabile ➡️"
+      else:
+        press_trend_str = "Stabile ➡️"
 
-        # Tutte le 7 metriche su un'unica riga
-        col_l1, col_l2, col_l3, col_l4, col_l5, col_l6, col_l7 = st.columns(7)
-        with col_l1:
-          st.metric(label="🌡️ Temperatura", value=temp_val)
-        with col_l2:
-          st.metric(label="🌡️ Temp. Avvertita", value=feels_val)
-        with col_l3:
-          st.metric(
-              label="💧 Umidità",
-              value=(
-                  f"{hum_val} %"
-                  if hum_val != "N.D." and hum_val is not None
-                  else "N.D."
-              ),
-          )
-        with col_l4:
-          st.metric(label="⏱️ Pressione", value=pressure_val)
-        with col_l5:
-          st.metric(label="📉 Trend Pressione", value=press_trend_str)
-        with col_l6:
-          st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
-        with col_l7:
-          st.metric(label="🟢 Stato", value="Online")
+      # 6 metriche distribuite su un'unica riga (senza duplicare lo stato)
+      col_l1, col_l2, col_l3, col_l4, col_l5, col_l6 = st.columns(6)
+      with col_l1:
+        st.metric(label="🌡️ Temperatura", value=temp_val)
+      with col_l2:
+        st.metric(label="🌡️ Temp. Avvertita", value=feels_val)
+      with col_l3:
+        st.metric(
+            label="💧 Umidità",
+            value=(
+                f"{hum_val} %"
+                if hum_val != "N.D." and hum_val is not None
+                else "N.D."
+            ),
+        )
+      with col_l4:
+        st.metric(label="⏱️ Pressione", value=pressure_val)
+      with col_l5:
+        st.metric(label="📉 Trend Pressione", value=press_trend_str)
+      with col_l6:
+        st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
 
-        st.caption(f"Ultima rilevazione stazione: {obs_time}")
+      st.caption(f"Ultima rilevazione stazione: {obs_time}")
 
-      except Exception as e:
-        st.warning(f"Errore nell'elaborazione dei dati meteo: {e}")
+    except Exception as e:
+      st.warning(f"Errore nell'elaborazione dei dati meteo: {e}")
+  else:
+    if not wu_station_id or not wu_api_key:
+      st.info(
+          "💡 Configura le credenziali Weather Underground (`station_id` e"
+          " `api_key`) nella sezione [wunderground] dei Secrets di Streamlit."
+      )
     else:
       st.error(
           "Impossibile recuperare i dati da Weather Underground. Dettaglio:"
           f" {err_msg}"
       )
-  else:
-    st.info(
-        "💡 Configura le credenziali Weather Underground (`station_id` e"
-        " `api_key`) nella sezione [wunderground] dei Secrets di Streamlit."
-    )
 
   st.markdown("---")
   st.subheader("Estremi Meteo")
