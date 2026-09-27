@@ -51,10 +51,13 @@ st.markdown(
 st_autorefresh(interval=10 * 60 * 1000, key="weather_autorefresh")
 
 
-# Funzione per connettersi e caricare i dati dal database
+# Funzione per connettersi e caricare i dati dal database e inizializzare la tabella previsioni se non esiste
 @st.cache_data(ttl=30)
 def load_data():
   conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+
+  # Tabella misurazioni storiche
   try:
     df = pd.read_sql("SELECT * FROM misurazioni ORDER BY Data ASC", conn)
   except Exception:
@@ -66,10 +69,51 @@ def load_data():
         "Umidita_%",
         "Pioggia_mm",
     ])
+
+  # Tabella previsioni manuali a 3 giorni
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS previsioni (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            Giorno_Label TEXT,
+            Temp_Max REAL,
+            Temp_Min REAL,
+            Descrizione TEXT
+        )
+    """)
+  cursor.execute("SELECT COUNT(*) FROM previsioni")
+  if cursor.fetchone()[0] == 0:
+    # Inseriamo 3 record di default se la tabella è vuota
+    default_prev = [
+        ("Oggi", 24.0, 14.0, "Sereno o poco nuvoloso"),
+        ("Domani", 25.0, 15.0, "Variabile con possibili schiarite"),
+        ("Dopodomani", 23.0, 13.0, "Nuvoloso con piogge sparse"),
+    ]
+    cursor.executemany(
+        """
+            INSERT INTO previsioni (Giorno_Label, Temp_Max, Temp_Min, Descrizione)
+            VALUES (?, ?, ?, ?)
+        """,
+        default_prev,
+    )
+    conn.commit()
+
   conn.close()
   if not df.empty:
     df["Data_dt"] = pd.to_datetime(df["Data"], errors="coerce")
   return df
+
+
+# Funzione per caricare le previsioni dal database
+def load_forecasts():
+  conn = sqlite3.connect(DB_NAME)
+  try:
+    f_df = pd.read_sql("SELECT * FROM previsioni", conn)
+  except Exception:
+    f_df = pd.DataFrame(
+        columns=["ID", "Giorno_Label", "Temp_Max", "Temp_Min", "Descrizione"]
+    )
+  conn.close()
+  return f_df
 
 
 # Funzione per recuperare i dati live da Weather Underground PWS API
@@ -85,33 +129,6 @@ def fetch_wunderground_data(station_id, api_key):
       return response.json(), "OK"
     else:
       return None, f"Errore HTTP {response.status_code}: {response.text}"
-  except Exception as e:
-    return None, f"Errore di connessione: {str(e)}"
-
-
-# Funzione per recuperare le previsioni a 3 giorni
-def fetch_wunderground_forecast(station_id, api_key):
-  if not station_id or not api_key:
-    return None, "Credenziali mancanti."
-
-  # Recuperiamo prima le coordinate della stazione
-  url_curr = f"https://api.weather.com/v2/pws/observations/current?stationId={station_id}&format=json&units=m&apiKey={api_key}"
-  try:
-    res_curr = requests.get(url_curr, timeout=10)
-    if res_curr.status_code == 200:
-      obs_data = res_curr.json().get("observations", [])
-      if obs_data:
-        lat = obs_data[0].get("lat")
-        lon = obs_data[0].get("lon")
-        if lat and lon:
-          # Chiamata API forecast a 3 giorni di Weather.com
-          url_fc = f"https://api.weather.com/v3/wx/forecast/daily/3day?geocode={lat},{lon}&format=json&units=m&language=it-IT&apiKey={api_key}"
-          res_fc = requests.get(url_fc, timeout=10)
-          if res_fc.status_code == 200:
-            return res_fc.json(), "OK"
-          else:
-            return None, f"Errore API Previsioni: {res_fc.status_code}"
-    return None, "Impossibile recuperare le coordinate della stazione."
   except Exception as e:
     return None, f"Errore di connessione: {str(e)}"
 
@@ -137,7 +154,7 @@ else:
 
 df = load_data()
 
-# Menu laterale con la nuova voce "Previsioni Meteo"
+# Menu laterale con la voce "Previsioni Meteo"
 menu = st.sidebar.radio(
     "Menu Principale",
     [
@@ -391,159 +408,199 @@ if menu == "📊 Dashboard":
     )
 
 # ==========================================
-# 2. PREVISIONI METEO
+# 2. PREVISIONI METEO (INSERIMENTO MANUALE & INFOGRAFICA)
 # ==========================================
 elif menu == "🔮 Previsioni Meteo":
   st.header("🔮 Previsioni Meteo (Prossimi 3 Giorni)")
   st.write(
-      "Previsioni ufficiali elaborate tramite le API di Weather"
-      " Underground/Weather.com per la località della stazione."
+      "Previsioni meteorologiche configurate e aggiornate per la stazione di"
+      " Monterotondo Scalo."
   )
 
-  if wu_station_id and wu_api_key:
-    forecast_data, err_fc = fetch_wunderground_forecast(
-        wu_station_id, wu_api_key
+  f_df = load_forecasts()
+
+  if not f_df.empty:
+    # Visualizzazione metriche riassuntive
+    cols = st.columns(len(f_df))
+    for i, row in f_df.iterrows():
+      with cols[i]:
+        st.metric(
+            label=f"📅 {row['Giorno_Label']}",
+            value=f"Max: {row['Temp_Max']:.1f}°C",
+            delta=f"Min: {row['Temp_Min']:.1f}°C",
+            delta_color="off",
+        )
+        st.caption(row["Descrizione"])
+
+    st.markdown("---")
+    st.subheader("📱 Infografica Dinamica per Instagram (4:5)")
+    st.write(
+        "Grafico riepilogativo basato sulle previsioni inserite,"
+        " ottimizzato per la condivisione social."
     )
-    if forecast_data:
-      try:
-        days_OfWeek = forecast_data.get("dayOfWeek", [])
-        temp_max = forecast_data.get("temperatureMax", [])
-        temp_min = forecast_data.get("temperatureMin", [])
-        narratives = forecast_data.get("narrative", [])
-        # Daypart contiene ulteriori dettagli come probabilità di pioggia
-        daypart = forecast_data.get("daypart", [{}])[0]
-        precip_chance = daypart.get("precipChance", [0, 0, 0, 0, 0, 0])
 
-        # Mostriamo le metriche sintetiche per i prossimi 3 giorni
-        cols = st.columns(3)
-        for i in range(min(3, len(days_OfWeek))):
-          d_name = days_OfWeek[i]
-          t_mx = (
-              temp_max[i]
-              if i < len(temp_max) and temp_max[i] is not None
-              else "N.D."
-          )
-          t_mn = (
-              temp_min[i]
-              if i < len(temp_min) and temp_min[i] is not None
-              else "N.D."
-          )
-          desc = narratives[i] if i < len(narratives) else ""
+    # Generazione infografica 4:5 con Matplotlib
+    fig, ax = plt.subplots(figsize=(5.5, 6.8), dpi=180)
 
-          with cols[i]:
-            st.metric(
-                label=f"📅 {d_name}",
-                value=f"Max: {t_mx}°C",
-                delta=f"Min: {t_mn}°C",
-                delta_color="off",
-            )
-            st.caption(desc)
+    plot_days = f_df["Giorno_Label"].tolist()
+    plot_max = f_df["Temp_Max"].tolist()
+    plot_min = f_df["Temp_Min"].tolist()
 
-        st.markdown("---")
-        st.subheader("📱 Infografica Dinamica per Instagram (4:5)")
-        st.write(
-            "Grafico riepilogativo delle temperature e condizioni previste,"
-            " ottimizzato per la condivisione social."
-        )
+    x = range(len(plot_days))
+    width = 0.35
 
-        # Generazione infografica 4:5 con Matplotlib
-        fig, ax = plt.subplots(figsize=(5.5, 6.8), dpi=180)
+    rects1 = ax.bar(
+        [p - width / 2 for p in x],
+        plot_max,
+        width,
+        label="Temp Max (°C)",
+        color="#ff7f0e",
+        alpha=0.85,
+    )
+    rects2 = ax.bar(
+        [p + width / 2 for p in x],
+        plot_min,
+        width,
+        label="Temp Min (°C)",
+        color="#1c83e1",
+        alpha=0.85,
+    )
 
-        # Estraiamo i primi 3 giorni per il grafico
-        plot_days = days_OfWeek[:3]
-        plot_max = [
-            t if t is not None else 0 for t in temp_max[:3]
-        ]  # convertiamo eventuali None
-        plot_min = [t if t is not None else 0 for t in temp_min[:3]]
+    ax.set_title(
+        "Previsioni Meteo - Prossimi 3 Giorni\nMonterotondo Scalo",
+        fontsize=12,
+        fontweight="bold",
+        pad=15,
+    )
+    ax.set_ylabel("Temperatura (°C)", fontsize=10)
+    ax.set_xticks(list(x))
+    ax.set_xticklabels(plot_days, fontsize=10, fontweight="bold")
+    ax.grid(True, linestyle="--", alpha=0.5)
+    ax.legend(loc="upper right", fontsize=8)
 
-        x = range(len(plot_days))
-        width = 0.35
-
-        rects1 = ax.bar(
-            [p - width / 2 for p in x],
-            plot_max,
-            width,
-            label="Temp Max (°C)",
-            color="#ff7f0e",
-            alpha=0.85,
-        )
-        rects2 = ax.bar(
-            [p + width / 2 for p in x],
-            plot_min,
-            width,
-            label="Temp Min (°C)",
-            color="#1c83e1",
-            alpha=0.85,
-        )
-
-        ax.set_title(
-            "Previsioni Meteo - Prossimi 3 Giorni\nMonterotondo Scalo",
-            fontsize=12,
-            fontweight="bold",
-            pad=15,
-        )
-        ax.set_ylabel("Temperatura (°C)", fontsize=10)
-        ax.set_xticks(list(x))
-        ax.set_xticklabels(plot_days, fontsize=10, fontweight="bold")
-        ax.grid(True, linestyle="--", alpha=0.5)
-        ax.legend(loc="upper right", fontsize=8)
-
-        # Aggiunta etichette valori sulle barre
-        for rect in rects1:
-          height = rect.get_height()
-          ax.annotate(
-              f"{height}°",
-              xy=(rect.get_x() + rect.get_width() / 2, height),
-              xytext=(0, 3),
-              textcoords="offset points",
-              ha="center",
-              va="bottom",
-              fontsize=9,
-              fontweight="bold",
-          )
-        for rect in rects2:
-          height = rect.get_height()
-          ax.annotate(
-              f"{height}°",
-              xy=(rect.get_x() + rect.get_width() / 2, height),
-              xytext=(0, 3),
-              textcoords="offset points",
-              ha="center",
-              va="bottom",
-              fontsize=9,
-              fontweight="bold",
-          )
-
-        plt.tight_layout()
-        st.pyplot(fig)
-
-        # Pulsante download infografica
-        buf_fc = io.BytesIO()
-        fig.savefig(buf_fc, format="png", bbox_inches="tight")
-        buf_fc.seek(0)
-
-        st.download_button(
-            label="📥 Scarica Infografica Previsioni (PNG 4:5)",
-            data=buf_fc,
-            file_name="previsioni_meteo_3giorni.png",
-            mime="image/png",
-        )
-        plt.close(fig)
-
-      except Exception as e:
-        st.error(
-            "Errore nell'elaborazione o visualizzazione delle previsioni:"
-            f" {e}"
-        )
-    else:
-      st.error(
-          f"Impossibile recuperare le previsioni da Weather Underground: {err_fc}"
+    # Aggiunta etichette valori sulle barre
+    for rect in rects1:
+      height = rect.get_height()
+      ax.annotate(
+          f"{height:.1f}°",
+          xy=(rect.get_x() + rect.get_width() / 2, height),
+          xytext=(0, 3),
+          textcoords="offset points",
+          ha="center",
+          va="bottom",
+          fontsize=9,
+          fontweight="bold",
       )
-  else:
-    st.info(
-        "💡 Configura le credenziali Weather Underground (`station_id` e"
-        " `api_key`) nella sezione [wunderground] dei Secrets di Streamlit."
+    for rect in rects2:
+      height = rect.get_height()
+      ax.annotate(
+          f"{height:.1f}°",
+          xy=(rect.get_x() + rect.get_width() / 2, height),
+          xytext=(0, 3),
+          textcoords="offset points",
+          ha="center",
+          va="bottom",
+          fontsize=9,
+          fontweight="bold",
+      )
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
+    # Pulsante download infografica
+    buf_fc = io.BytesIO()
+    fig.savefig(buf_fc, format="png", bbox_inches="tight")
+    buf_fc.seek(0)
+
+    st.download_button(
+        label="📥 Scarica Infografica Previsioni (PNG 4:5)",
+        data=buf_fc,
+        file_name="previsioni_meteo_3giorni.png",
+        mime="image/png",
     )
+    plt.close(fig)
+
+  st.markdown("---")
+  st.subheader("⚙️ Modifica Previsioni (Area Riservata)")
+
+  if not st.session_state["auth_ok"]:
+    pwd_prev = st.text_input(
+        "Inserisci la password amministratore per modificare le previsioni:",
+        type="password",
+        key="pwd_prev_input",
+    )
+    if st.button("Accedi per Modificare", key="btn_prev_login"):
+      if pwd_prev == admin_password:
+        st.session_state["auth_ok"] = True
+        st.rerun()
+      else:
+        st.error("❌ Password errata.")
+  else:
+    st.success("🔓 Accesso autorizzato per la modifica previsioni")
+    if st.button("🔒 Esci dall'area protetta", key="btn_prev_logout"):
+      st.session_state["auth_ok"] = False
+      st.rerun()
+
+    with st.form("form_modifica_previsioni"):
+      st.write("Aggiorna i dati per i 3 giorni:")
+      updated_rows = []
+
+      # Carichiamo i dati attuali nel form
+      current_f = load_forecasts()
+      for idx, row in current_f.iterrows():
+        st.markdown(f"**Giorno {idx+1}**")
+        c1, c2, c3, c4 = st.columns(4)
+        with c1:
+          g_label = st.text_input(
+              f"Etichetta {idx+1}",
+              value=row["Giorno_Label"],
+              key=f"label_{idx}",
+          )
+        with c2:
+          t_max = st.number_input(
+              f"Max (°C) {idx+1}",
+              value=float(row["Temp_Max"]),
+              format="%.1f",
+              key=f"tmax_{idx}",
+          )
+        with c3:
+          t_min = st.number_input(
+              f"Min (°C) {idx+1}",
+              value=float(row["Temp_Min"]),
+              format="%.1f",
+              key=f"tmin_{idx}",
+          )
+        with c4:
+          desc = st.text_input(
+              f"Descrizione {idx+1}",
+              value=row["Descrizione"],
+              key=f"desc_{idx}",
+          )
+        updated_rows.append(
+            (row["ID"], g_label, t_max, t_min, desc)
+        )  # keep ID for update
+
+      submit_prev = st.form_submit_button("Salva Nuove Previsioni")
+      if submit_prev:
+        try:
+          conn = sqlite3.connect(DB_NAME)
+          cursor = conn.cursor()
+          for r_id, g_label, t_max, t_min, desc in updated_rows:
+            cursor.execute(
+                """
+                            UPDATE previsioni 
+                            SET Giorno_Label = ?, Temp_Max = ?, Temp_Min = ?, Descrizione = ?
+                            WHERE ID = ?
+                        """,
+                (g_label, t_max, t_min, desc, r_id),
+            )
+          conn.commit()
+          conn.close()
+          st.cache_data.clear()
+          st.success("Previsioni aggiornate con successo!")
+          st.rerun()
+        except Exception as e:
+          st.error(f"Errore durante il salvataggio delle previsioni: {e}")
 
 # ==========================================
 # 3. CONSULTAZIONE DATABASE
