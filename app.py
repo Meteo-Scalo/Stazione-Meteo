@@ -1,5 +1,6 @@
 from datetime import datetime
 import io
+import os
 import matplotlib.pyplot as plt
 import pandas as pd
 import requests
@@ -87,11 +88,16 @@ def fetch_wunderground_data(station_id, api_key):
     return None, f"Errore di connessione: {str(e)}"
 
 
-# Intestazione grafica con l'immagine personalizzata
-st.image(
-    "684225363_1433769152096303_7382692641941825555_n.jpg",
-    use_container_width=True,
-)
+# Intestazione grafica con controllo di sicurezza per l'immagine PNG
+image_filename = "684225363_1433769152096303_7382692641941825555_n.png"
+if os.path.exists(image_filename):
+  st.image(image_filename, use_container_width=True)
+else:
+  st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
+  st.warning(
+      f"⚠️ Immagine di intestazione ('{image_filename}') non trovata nella"
+      " cartella del repository."
+  )
 
 df = load_data()
 
