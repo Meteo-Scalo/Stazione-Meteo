@@ -2,6 +2,7 @@ from datetime import datetime
 import io
 import os
 import matplotlib.pyplot as plt
+from PIL import Image
 import pandas as pd
 import requests
 import sqlite3
@@ -88,10 +89,20 @@ def fetch_wunderground_data(station_id, api_key):
     return None, f"Errore di connessione: {str(e)}"
 
 
-# Intestazione grafica con controllo di sicurezza per l'immagine PNG
+# Intestazione grafica ridotta in altezza tramite PIL
 image_filename = "684225363_1433769152096303_7382692641941825555_n.png"
 if os.path.exists(image_filename):
-  st.image(image_filename, use_container_width=True)
+  try:
+    img = Image.open(image_filename)
+    w, h = img.size
+    # Riduciamo l'altezza (es. portandola al 55% o 60% dell'originale).
+    # Puoi cambiare 0.55 se la vuoi più alta (es. 0.70) o più bassa (es. 0.45).
+    new_h = int(h * 0.55)
+    top = (h - new_h) // 2  # Taglio verticale centrato
+    img_cropped = img.crop((0, top, w, top + new_h))
+    st.image(img_cropped, use_container_width=True)
+  except Exception:
+    st.image(image_filename, use_container_width=True)
 else:
   st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
   st.warning(
