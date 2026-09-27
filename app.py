@@ -95,8 +95,6 @@ if os.path.exists(image_filename):
   try:
     img = Image.open(image_filename)
     w, h = img.size
-    # Imposta l'altezza desiderata (es. 55% dell'originale).
-    # Puoi variare 0.55 se vuoi che siveda più o meno altezza.
     new_h = int(h * 0.55)
     top = 0  # Taglia partendo dall'alto
     img_cropped = img.crop((0, top, w, top + new_h))
@@ -200,14 +198,30 @@ if menu == "📊 Dashboard":
         except (ValueError, TypeError):
           pressure_val = "N.D."
 
-        # Trend pressione da Weather Underground con freccia verde/rossa
-        pressure_tendency = obs.get("pressureTendency", "")
-        if pressure_tendency == "+":
-          press_trend_str = "In aumento 🟢 ↗️"
-        elif pressure_tendency == "-":
-          press_trend_str = "In calo 🔴 ↘️"
+        # Calcolo dinamico del trend della pressione basato sulla lettura precedente
+        current_pressure = (
+            float(pressure_raw) if pressure_raw is not None else None
+        )
+
+        if "prev_pressure" not in st.session_state:
+          st.session_state["prev_pressure"] = current_pressure
+
+        if (
+            current_pressure is not None
+            and st.session_state["prev_pressure"] is not None
+        ):
+          diff = current_pressure - st.session_state["prev_pressure"]
+          if diff > 0.3:
+            press_trend_str = "In aumento 🟢 ↗️"
+          elif diff < -0.3:
+            press_trend_str = "In calo 🔴 ↘️"
+          else:
+            press_trend_str = "Stabile ➡️"
         else:
           press_trend_str = "Stabile ➡️"
+
+        if current_pressure is not None:
+          st.session_state["prev_pressure"] = current_pressure
 
         # Tutte le 7 metriche su un'unica riga
         col_l1, col_l2, col_l3, col_l4, col_l5, col_l6, col_l7 = st.columns(7)
