@@ -18,23 +18,40 @@ st.set_page_config(
     page_icon="🌦️",
 )
 
-# Stile CSS personalizzato per centrare titoli, metriche e tabelle in tutte le pagine
+# Stile CSS Moderno (Glassmorphism & UI Professionale)
 st.markdown(
     """
     <style>
+    /* Sfondo generale e font pulito */
+    .stApp {
+        background-color: #0B0F19;
+        color: #F8FAFC;
+    }
+    
     /* Centratura di titoli e sottotitoli */
     h1, h2, h3, h4 {
         text-align: center;
+        color: #F8FAFC;
+        font-weight: 700;
     }
     
-    /* Centratura delle metriche */
+    /* Centratura e stile delle metriche */
     div[data-testid="stMetric"] {
+        background: rgba(30, 41, 59, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        padding: 15px;
+        border-radius: 16px;
         text-align: center;
         align-items: center;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
     }
     div[data-testid="stMetricValue"], div[data-testid="stMetricLabel"], div[data-testid="stMetricDelta"] {
         text-align: center !important;
         justify-content: center !important;
+    }
+    div[data-testid="stMetricValue"] {
+        color: #38BDF8 !important;
+        font-weight: 700;
     }
 
     /* Centratura tabelle e dataframe */
@@ -133,75 +150,53 @@ def fetch_wunderground_data(station_id, api_key):
 
 
 # ==========================================
-# FUNZIONE ICONE METEO AVANZATE & DETTAGLIATE
+# ICONE METEO MINIMALISTE & MODERNE (FLAT DESIGN)
 # ==========================================
 def draw_weather_icon(draw, cx, cy, desc_lower):
   import math
 
   if "piogg" in desc_lower or "temporale" in desc_lower or "rovesci" in desc_lower:
-    # Nuvola temporalesca/pioggia di qualità elevata
-    # Ombra nuvola
-    draw.ellipse([cx - 48, cy - 22, cx + 52, cy + 22], fill="#4A5568")
-    # Corpo nuvola principale
-    draw.ellipse([cx - 50, cy - 25, cx + 50, cy + 18], fill="#A0AEC0", outline="#2D3748", width=3)
-    draw.ellipse([cx - 30, cy - 40, cx + 30, cy + 5], fill="#CBD5E0", outline="#2D3748", width=3)
-    
-    if "temporale" in desc_lower:
-      # Saetta luminosa
-      points = [(cx - 5, cy + 15), (cx + 10, cy + 15), (cx - 2, cy + 32), (cx + 12, cy + 32), (cx - 10, cy + 55), (cx + 2, cy + 35), (cx - 8, cy + 35)]
-      draw.polygon(points, fill="#ECC94B", outline="#B7791F", width=2)
-    else:
-      # Gocce di pioggia multiple stilizzate
-      for dx in [-20, 0, 20]:
-        draw.ellipse([cx + dx - 4, cy + 22, cx + dx + 4, cy + 34], fill="#3182CE", outline="#2B6CB0", width=1)
+    # Nuvola pioggia elegante in stile flat
+    draw.ellipse([cx - 45, cy - 20, cx + 45, cy + 20], fill="#64748B")
+    draw.ellipse([cx - 25, cy - 35, cx + 25, cy + 5], fill="#94A3B8")
+    # Gocce d'acqua stilizzate pulite
+    for dx in [-18, 0, 18]:
+      draw.rounded_rectangle([cx + dx - 3, cy + 24, cx + dx + 3, cy + 36], radius=3, fill="#38BDF8")
 
   elif "neve" in desc_lower:
-    draw.ellipse([cx - 50, cy - 25, cx + 50, cy + 18], fill="#E2E8F0", outline="#A0AEC0", width=3)
-    draw.text((cx - 15, cy + 18), "❄️", fill="#3182CE")
+    draw.ellipse([cx - 45, cy - 20, cx + 45, cy + 20], fill="#94A3B8")
+    draw.text((cx - 14, cy + 12), "❄️", fill="#38BDF8")
 
   elif "nuvol" in desc_lower or "coperto" in desc_lower:
-    # Nuvola soffice tridimensionale
-    draw.ellipse([cx - 52, cy - 22, cx + 48, cy + 22], fill="#CBD5E0")
-    draw.ellipse([cx - 50, cy - 25, cx + 50, cy + 18], fill="#EDF2F7", outline="#A0AEC0", width=3)
-    draw.ellipse([cx - 30, cy - 42, cx + 25, cy + 2], fill="#FFFFFF", outline="#A0AEC0", width=3)
+    # Nuvola soffice moderna
+    draw.ellipse([cx - 48, cy - 18, cx + 42, cy + 22], fill="#475569")
+    draw.ellipse([cx - 45, cy - 22, cx + 45, cy + 18], fill="#94A3B8")
+    draw.ellipse([cx - 25, cy - 38, cx + 25, cy + 2], fill="#CBD5E1")
 
   elif "variabil" in desc_lower or "schiarite" in desc_lower or "parzialmente" in desc_lower:
-    # Sole parzialmente coperto da nuvola
-    # Raggi e corpo sole sullo sfondo
-    for angle in range(0, 360, 45):
-      rad = math.radians(angle)
-      x1 = cx - 10 + int(35 * math.cos(rad))
-      y1 = cy - 10 + int(35 * math.sin(rad))
-      x2 = cx - 10 + int(45 * math.cos(rad))
-      y2 = cy - 10 + int(45 * math.sin(rad))
-      draw.line([x1, y1, x2, y2], fill="#ED8936", width=4)
-    draw.ellipse([cx - 35, cy - 45, cx + 15, cy + 5], fill="#F6AD55", outline="#DD6B20", width=2)
+    # Sole parzialmente coperto da nuvola (stile flat curato)
+    # Sole sullo sfondo
+    draw.ellipse([cx - 35, cy - 35, cx + 5, cy + 5], fill="#FBBF24")
     # Nuvola in primo piano
-    draw.ellipse([cx - 20, cy - 10, cx + 52, cy + 32], fill="#EDF2F7", outline="#718096", width=3)
+    draw.ellipse([cx - 20, cy - 8, cx + 48, cy + 26], fill="#64748B")
+    draw.ellipse([cx - 5, cy - 22, cx + 38, cy + 12], fill="#CBD5E1")
 
   else:
-    # Sole splendente di alta qualità con raggi sfumati ed espressivo
-    for angle in range(0, 360, 45):
-      rad = math.radians(angle)
-      x1 = cx + int(42 * math.cos(rad))
-      y1 = cy + int(42 * math.sin(rad))
-      x2 = cx + int(58 * math.cos(rad))
-      y2 = cy + int(58 * math.sin(rad))
-      draw.line([x1, y1, x2, y2], fill="#DD6B20", width=5)
-    
-    # Cerchio esterno e interno del sole
-    draw.ellipse([cx - 38, cy - 38, cx + 38, cy + 38], fill="#DD6B20")
-    draw.ellipse([cx - 35, cy - 35, cx + 35, cy + 35], fill="#ED8936")
-    draw.ellipse([cx - 30, cy - 30, cx + 30, cy + 30], fill="#F6E05E")
+    # Sole splendente moderno, pulito e luminoso (senza linee grossolane)
+    # Raggi circolari arrotondati o cerchi concentrici morbidi
+    draw.ellipse([cx - 36, cy - 36, cx + 36, cy + 36], fill="#F59E0B")
+    draw.ellipse([cx - 28, cy - 28, cx + 28, cy + 28], fill="#FBBF24")
+    # Riflesso interno elegante
+    draw.ellipse([cx - 20, cy - 20, cx + 20, cy + 20], fill="#FEF3C7")
 
 
 # ==========================================
-# GENERAZIONE INFOGRAFICA STILE CARD PREMIUM
+# GENERAZIONE INFOGRAFICA CARD PREMIUM
 # ==========================================
 def create_comic_infographic(f_df):
   width, height = 1080, 1350
-  # Sfondo notte stellata profonda ed elegante
-  img = Image.new("RGB", (width, height), color="#0F172A")
+  # Sfondo notte stellata profonda ed elegante (stile glassmorphism)
+  img = Image.new("RGB", (width, height), color="#0B0F19")
   draw = ImageDraw.Draw(img)
 
   # Caricamento font sicuri
@@ -219,9 +214,9 @@ def create_comic_infographic(f_df):
     font_card_text = ImageFont.load_default()
 
   # Intestazione superiore
-  draw.text((width / 2, 65), "METEO MONTEROTONDO SCALO", fill="#FFFFFF", font=font_title, anchor="mm")
+  draw.text((width / 2, 70), "METEO MONTEROTONDO SCALO", fill="#F8FAFC", font=font_title, anchor="mm")
   today_str = datetime.now().strftime("Aggiornato al %A %d %B %Y").capitalize()
-  draw.text((width / 2, 125), today_str, fill="#38BDF8", font=font_sub, anchor="mm")
+  draw.text((width / 2, 130), today_str, fill="#38BDF8", font=font_sub, anchor="mm")
 
   if f_df.empty:
     return img
@@ -229,20 +224,20 @@ def create_comic_infographic(f_df):
   # 1. Card Principale Sinistra (Oggi)
   oggi_row = f_df.iloc[0]
   card_oggi_box = [50, 180, 510, 1300]
-  # Effetto vetro / card metallizzata scura e raffinata
-  draw.rounded_rectangle(card_oggi_box, radius=30, fill="#1E293B", outline="#475569", width=4)
+  # Card stile glass scuro con bordo sottile ed elegante
+  draw.rounded_rectangle(card_oggi_box, radius=32, fill="#1E293B", outline="#334155", width=2)
 
   # Intestazione Card Oggi
-  draw.text((280, 235), str(oggi_row["Giorno_Label"]).upper(), fill="#F8FAFC", font=font_card_title, anchor="mm")
+  draw.text((280, 240), str(oggi_row["Giorno_Label"]).upper(), fill="#F8FAFC", font=font_card_title, anchor="mm")
   
   # Temperatura grande
   temp_str = f"{oggi_row['Temp_Max']:.0f}°C"
-  draw.text((280, 345), temp_str, fill="#38BDF8", font=font_card_big, anchor="mm")
+  draw.text((280, 350), temp_str, fill="#38BDF8", font=font_card_big, anchor="mm")
 
-  # Icona meteo centrale grande in evidenza
-  draw_weather_icon(draw, 280, 570, str(oggi_row["Descrizione"]).lower())
+  # Icona meteo centrale avanzata
+  draw_weather_icon(draw, 280, 560, str(oggi_row["Descrizione"]).lower())
 
-  # Dettagli Minima e Condizioni nella card principale
+  # Dettagli Minima e Condizioni
   draw.text((280, 780), f"Minima: {oggi_row['Temp_Min']:.1f}°C", fill="#94A3B8", font=font_card_text, anchor="mm")
   draw.text((280, 850), f"Condizioni: {oggi_row['Descrizione']}", fill="#F1F5F9", font=font_card_title, anchor="mm")
 
@@ -255,8 +250,8 @@ def create_comic_infographic(f_df):
     row = f_df.iloc[i]
     ry = right_cards_y[i - 1]
     
-    # Sfondo card destra in stile dark card
-    draw.rounded_rectangle([rx1, ry, rx2, ry + card_height], radius=24, fill="#1E293B", outline="#475569", width=3)
+    # Sfondo card destra in stile glass
+    draw.rounded_rectangle([rx1, ry, rx2, ry + card_height], radius=24, fill="#1E293B", outline="#334155", width=2)
 
     # Etichetta giorno
     draw.text((rx1 + 40, ry + 40), str(row["Giorno_Label"]).upper(), fill="#F8FAFC", font=font_card_title)
@@ -268,13 +263,13 @@ def create_comic_infographic(f_df):
     # Descrizione
     draw.text((rx1 + 40, ry + 175), str(row["Descrizione"]), fill="#94A3B8", font=font_card_text)
 
-    # Icona meteo avanzata a destra nella card
+    # Icona meteo a destra nella card
     draw_weather_icon(draw, rx2 - 110, ry + 190, str(row["Descrizione"]).lower())
 
   return img
 
 
-# Intestazione grafica ridotta in altezza tagliando dalla parte superiore
+# Intestazione grafica ridotta in altezza
 image_filename = "684225363_1433769152096303_7382692641941825555_n.png"
 if os.path.exists(image_filename):
   try:
@@ -292,7 +287,7 @@ else:
 
 df = load_data()
 
-# Menu laterale con la voce "Previsioni Meteo"
+# Menu laterale
 menu = st.sidebar.radio(
     "Menu Principale",
     [
@@ -307,7 +302,7 @@ menu = st.sidebar.radio(
     ],
 )
 
-# Gestione dello stato di autenticazione per le aree protette
+# Gestione stato autenticazione
 if "auth_ok" not in st.session_state:
   st.session_state["auth_ok"] = False
 
@@ -324,7 +319,7 @@ except Exception:
   admin_password = "admin123"
 
 if df.empty:
-  st.warning("Il database è attualmente vuoto. Utilizza la sezione 'Importa / Esporta Dati' o 'Inserisci Misura' per popolare le misurazioni.")
+  st.warning("Il database è attualmente vuoto. Utilizza la sezione 'Importa / Esporta Dati' o 'Inserisci Misura'.")
 else:
   if "Data_dt" not in df.columns:
     df["Data_dt"] = pd.to_datetime(df["Data"], errors="coerce")
@@ -418,7 +413,7 @@ if menu == "📊 Dashboard":
 
   st.markdown("---")
   st.subheader("Estremi Meteo")
-  st.markdown("<p style='text-align: center;'>Tabella riepilogativa con le due temperature massime più alte e le due minime più basse per ogni mese, inclusi i record assoluti.</p>", unsafe_allow_html=True)
+  st.markdown("<p style='text-align: center; color: #94A3B8;'>Tabella riepilogativa con le due temperature massime più alte e le due minime più basse per ogni mese.</p>", unsafe_allow_html=True)
 
   mesi_nomi = {
       1: "Gennaio", 2: "Febbraio", 3: "Marzo", 4: "Aprile",
@@ -460,8 +455,8 @@ if menu == "📊 Dashboard":
         hide_index=True,
         column_config={
             "Mese": st.column_config.TextColumn("Mese", width="small"),
-            "Top 2 Temp Max": st.column_config.TextColumn("🔥 Top 2 Temperature Massime (Valore e Data)", width="large"),
-            "Top 2 Temp Min": st.column_config.TextColumn("❄️ Top 2 Temperature Minime (Valore e Data)", width="large"),
+            "Top 2 Temp Max": st.column_config.TextColumn("🔥 Top 2 Temperature Massime", width="large"),
+            "Top 2 Temp Min": st.column_config.TextColumn("❄️ Top 2 Temperature Minime", width="large"),
         },
     )
 
@@ -480,7 +475,7 @@ if menu == "📊 Dashboard":
     col_b.metric("Temperatura Min Assoluta", f"{abs_min_val:.1f} °C", f"Data: {abs_min_date}")
 
 # ==========================================
-# 2. PREVISIONI METEO (STILE CARD PREMIUM)
+# 2. PREVISIONI METEO
 # ==========================================
 elif menu == "🔮 Previsioni Meteo":
   st.header("🔮 Previsioni Meteo (Prossimi 3 Giorni)")
@@ -501,8 +496,8 @@ elif menu == "🔮 Previsioni Meteo":
         st.caption(row["Descrizione"])
 
     st.markdown("---")
-    st.subheader("🎨 Infografica in Stile Card Premium (4:5)")
-    st.write("Anteprima dell'infografica con icone avanzate e layout a card in stile moderno:")
+    st.subheader("🎨 Infografica in Stile Modern Glassmorphism (4:5)")
+    st.write("Anteprima dell'infografica con icone flat minimaliste e design pulito:")
 
     comic_img = create_comic_infographic(f_df)
     st.image(comic_img, use_container_width=True)
@@ -512,9 +507,9 @@ elif menu == "🔮 Previsioni Meteo":
     buf_fc.seek(0)
 
     st.download_button(
-        label="📥 Scarica Infografica Stile Card Premium (PNG 4:5)",
+        label="📥 Scarica Infografica Stile Card Modern (PNG 4:5)",
         data=buf_fc,
-        file_name="previsioni_meteo_card_premium.png",
+        file_name="previsioni_meteo_card_modern.png",
         mime="image/png",
     )
 
@@ -636,7 +631,7 @@ elif menu == "📅 Dati Giornalieri":
     c3.metric("Temp Media Mese", f"{tmed_mean:.1f} °C", delta=f"{delta_tmed:+.1f} °C vs storica", delta_color="inverse")
     c4.metric("Pioggia Totale", f"{rain_sum:.1f} mm")
 
-    st.caption(f"💡 Media storica di {sel_mese_str} calcolata sul totale degli anni: {hist_tmed_mean:.1f} °C")
+    st.caption(f"💡 Media storica di {sel_mese_str}: {hist_tmed_mean:.1f} °C")
 
     st.markdown("---")
     st.subheader("📱 Grafico Formato Instagram (4:5) - Temperatura & Pioggia")
@@ -653,25 +648,30 @@ elif menu == "📅 Dati Giornalieri":
     m_data_plot = pd.merge(m_data_plot, hist_daily_mean, on="Giorno", how="left")
 
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True)
+    fig.patch.set_facecolor("#0B0F19")
+    ax1.set_facecolor("#1E293B")
+    ax2.set_facecolor("#1E293B")
 
-    ax1.plot(m_data_plot["Giorno"], m_data_plot["Temperatura_Media_C"], label=f"Media Misurata {sel_anno} (°C)", color="#2ca02c", linewidth=1.8, marker="o", markersize=3)
-    ax1.plot(m_data_plot["Giorno"], m_data_plot["Temp_Media_Storica"], label="Media Storica (Anni Prec.) (°C)", color="#ff7f0e", linewidth=1.8, linestyle="--")
-    ax1.set_title(f"Confronto Temperatura Media & Pioggia\n{sel_mese_str} {sel_anno}", fontsize=11, fontweight="bold", pad=10)
-    ax1.set_ylabel("Temperatura (°C)", fontsize=9)
-    ax1.grid(True, linestyle="--", alpha=0.5)
-    ax1.legend(loc="upper right", fontsize=7)
+    ax1.plot(m_data_plot["Giorno"], m_data_plot["Temperatura_Media_C"], label=f"Media Misurata {sel_anno} (°C)", color="#38BDF8", linewidth=2, marker="o", markersize=3)
+    ax1.plot(m_data_plot["Giorno"], m_data_plot["Temp_Media_Storica"], label="Media Storica (°C)", color="#F59E0B", linewidth=1.8, linestyle="--")
+    ax1.set_title(f"Confronto Temperatura Media & Pioggia\n{sel_mese_str} {sel_anno}", fontsize=11, fontweight="bold", pad=10, color="white")
+    ax1.set_ylabel("Temperatura (°C)", fontsize=9, color="white")
+    ax1.tick_params(colors="white", labelsize=8)
+    ax1.grid(True, linestyle="--", alpha=0.2)
+    ax1.legend(loc="upper right", fontsize=7, facecolor="#1E293B", edgecolor="none", labelcolor="white")
 
-    ax2.bar(m_data_plot["Giorno"], m_data_plot["Pioggia_mm"], label="Pioggia (mm)", color="#1c83e1", alpha=0.8, width=0.8)
-    ax2.set_xlabel("Giorno del mese", fontsize=9)
-    ax2.set_ylabel("Pioggia (mm)", fontsize=9)
-    ax2.grid(True, linestyle="--", alpha=0.5)
-    ax2.legend(loc="upper right", fontsize=7)
+    ax2.bar(m_data_plot["Giorno"], m_data_plot["Pioggia_mm"], label="Pioggia (mm)", color="#38BDF8", alpha=0.85, width=0.8)
+    ax2.set_xlabel("Giorno del mese", fontsize=9, color="white")
+    ax2.set_ylabel("Pioggia (mm)", fontsize=9, color="white")
+    ax2.tick_params(colors="white", labelsize=8)
+    ax2.grid(True, linestyle="--", alpha=0.2)
+    ax2.legend(loc="upper right", fontsize=7, facecolor="#1E293B", edgecolor="none", labelcolor="white")
 
     plt.tight_layout()
     st.pyplot(fig)
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight")
+    fig.savefig(buf, format="png", bbox_inches="tight", facecolor=fig.get_facecolor())
     buf.seek(0)
 
     st.download_button(
@@ -723,7 +723,7 @@ elif menu == "📈 Dati Mensili":
     })
 
   annual_df = pd.DataFrame(annual_list)
-  st.markdown(f"💡 **Media storica generale (tutti gli anni):** {overall_hist_tmed:.1f} °C")
+  st.markdown(f"💡 **Media storica generale:** {overall_hist_tmed:.1f} °C")
   st.dataframe(annual_df, use_container_width=True, hide_index=True)
 
   if not annual_df.empty:
@@ -753,30 +753,36 @@ elif menu == "📈 Dati Mensili":
       mensile_anno = pd.merge(mensile_anno, hist_monthly_mean, on="Data_dt", how="left")
 
       fig_ann, (ax1_ann, ax2_ann) = plt.subplots(2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True)
+      fig_ann.patch.set_facecolor("#0B0F19")
+      ax1_ann.set_facecolor("#1E293B")
+      ax2_ann.set_facecolor("#1E293B")
+
       mesi_brevi = ["Gen", "Feb", "Mar", "Apr", "Mag", "Giu", "Lug", "Ago", "Set", "Ott", "Nov", "Dic"]
       x_labels = [mesi_brevi[int(m) - 1] for m in mensile_anno["Data_dt"]]
 
-      ax1_ann.plot(x_labels, mensile_anno["Temperatura_Media_C"], label=f"Media Misurata {sel_anno_grafico} (°C)", color="#2ca02c", marker="s", linewidth=1.8, markersize=4)
-      ax1_ann.plot(x_labels, mensile_anno["Temp_Media_Storica"], label="Media Storica (Anni Prec.) (°C)", color="#ff7f0e", marker="o", linewidth=1.8, markersize=4, linestyle="--")
-      ax1_ann.set_title(f"Confronto Temperatura Media Mensile & Pioggia\nAnno {sel_anno_grafico}", fontsize=11, fontweight="bold", pad=10)
-      ax1_ann.set_ylabel("Temperatura (°C)", fontsize=9)
-      ax1_ann.grid(True, linestyle="--", alpha=0.5)
-      ax1_ann.legend(loc="upper right", fontsize=7)
+      ax1_ann.plot(x_labels, mensile_anno["Temperatura_Media_C"], label=f"Media Misurata {sel_anno_grafico} (°C)", color="#38BDF8", marker="s", linewidth=2, markersize=4)
+      ax1_ann.plot(x_labels, mensile_anno["Temp_Media_Storica"], label="Media Storica (°C)", color="#F59E0B", marker="o", linewidth=1.8, markersize=4, linestyle="--")
+      ax1_ann.set_title(f"Confronto Temperatura Media Mensile & Pioggia\nAnno {sel_anno_grafico}", fontsize=11, fontweight="bold", pad=10, color="white")
+      ax1_ann.set_ylabel("Temperatura (°C)", fontsize=9, color="white")
+      ax1_ann.tick_params(colors="white", labelsize=8)
+      ax1_ann.grid(True, linestyle="--", alpha=0.2)
+      ax1_ann.legend(loc="upper right", fontsize=7, facecolor="#1E293B", edgecolor="none", labelcolor="white")
 
-      ax2_ann.bar(x_labels, mensile_anno["Pioggia_mm"], label="Pioggia Totale (mm)", color="#1c83e1", alpha=0.8, width=0.6)
-      ax2_ann.set_ylabel("Pioggia (mm)", fontsize=9)
-      ax2_ann.grid(True, linestyle="--", alpha=0.5)
-      ax2_ann.legend(loc="upper right", fontsize=7)
+      ax2_ann.bar(x_labels, mensile_anno["Pioggia_mm"], label="Pioggia Totale (mm)", color="#38BDF8", alpha=0.85, width=0.6)
+      ax2_ann.set_ylabel("Pioggia (mm)", fontsize=9, color="white")
+      ax2_ann.tick_params(colors="white", labelsize=8)
+      ax2_ann.grid(True, linestyle="--", alpha=0.2)
+      ax2_ann.legend(loc="upper right", fontsize=7, facecolor="#1E293B", edgecolor="none", labelcolor="white")
 
       plt.tight_layout()
       st.pyplot(fig_ann)
 
       buf_ann = io.BytesIO()
-      fig_ann.savefig(buf_ann, format="png", bbox_inches="tight")
+      fig_ann.savefig(buf_ann, format="png", bbox_inches="tight", facecolor=fig_ann.get_facecolor())
       buf_ann.seek(0)
 
       st.download_button(
-          label=f"📥 Scarica Grafico Anno {sel_anno_grafico} per Instagram (PNG 4:5)",
+          label=f"📥 Scarica Grafico Anno {sel_anno_grafico} (PNG 4:5)",
           data=buf_ann,
           file_name=f"meteo_anno_{sel_anno_grafico}.png",
           mime="image/png",
@@ -799,25 +805,30 @@ elif menu == "📊 Grafici Annuali":
     st.info("Nessun dato disponibile per generare i grafici annuali.")
   else:
     fig_glob, (ax1_g, ax2_g) = plt.subplots(2, 1, figsize=(8, 7), dpi=180, sharex=True)
+    fig_glob.patch.set_facecolor("#0B0F19")
+    ax1_g.set_facecolor("#1E293B")
+    ax2_g.set_facecolor("#1E293B")
 
-    ax1_g.plot(annuale_globale["Anno"], annuale_globale["Temperatura_Media_C"], label="Temperatura Media Annua (°C)", color="#2ca02c", marker="o", linewidth=2, markersize=6)
-    ax1_g.set_title("Andamento Storico - Temperatura Media Annua & Pioggia Totale", fontsize=12, fontweight="bold", pad=12)
-    ax1_g.set_ylabel("Temperatura Media (°C)", fontsize=10)
-    ax1_g.grid(True, linestyle="--", alpha=0.5)
-    ax1_g.legend(loc="upper right", fontsize=8)
+    ax1_g.plot(annuale_globale["Anno"], annuale_globale["Temperatura_Media_C"], label="Temperatura Media Annua (°C)", color="#38BDF8", marker="o", linewidth=2, markersize=6)
+    ax1_g.set_title("Andamento Storico - Temperatura Media Annua & Pioggia Totale", fontsize=12, fontweight="bold", pad=12, color="white")
+    ax1_g.set_ylabel("Temp. Media (°C)", fontsize=10, color="white")
+    ax1_g.tick_params(colors="white")
+    ax1_g.grid(True, linestyle="--", alpha=0.2)
+    ax1_g.legend(loc="upper right", fontsize=8, facecolor="#1E293B", edgecolor="none", labelcolor="white")
 
-    ax2_g.bar(annuale_globale["Anno"], annuale_globale["Pioggia_mm"], label="Pioggia Totale Annua (mm)", color="#1c83e1", alpha=0.8, width=0.6)
-    ax2_g.set_xlabel("Anno", fontsize=10)
-    ax2_g.set_ylabel("Pioggia Totale (mm)", fontsize=10)
-    ax2_g.grid(True, linestyle="--", alpha=0.5)
-    ax2_g.legend(loc="upper right", fontsize=8)
+    ax2_g.bar(annuale_globale["Anno"], annuale_globale["Pioggia_mm"], label="Pioggia Totale Annua (mm)", color="#38BDF8", alpha=0.85, width=0.6)
+    ax2_g.set_xlabel("Anno", fontsize=10, color="white")
+    ax2_g.set_ylabel("Pioggia (mm)", fontsize=10, color="white")
+    ax2_g.tick_params(colors="white")
+    ax2_g.grid(True, linestyle="--", alpha=0.2)
+    ax2_g.legend(loc="upper right", fontsize=8, facecolor="#1E293B", edgecolor="none", labelcolor="white")
     ax2_g.set_xticks(annuale_globale["Anno"])
 
     plt.tight_layout()
     st.pyplot(fig_glob)
 
     buf_glob = io.BytesIO()
-    fig_glob.savefig(buf_glob, format="png", bbox_inches="tight")
+    fig_glob.savefig(buf_glob, format="png", bbox_inches="tight", facecolor=fig_glob.get_facecolor())
     buf_glob.seek(0)
 
     st.download_button(
@@ -931,5 +942,5 @@ elif menu == "📁 Importa / Esporta Dati":
         "Scarica dati in formato CSV",
         data=csv_bytes,
         file_name="export_meteo.csv",
-        mime="text/csv",
+        mime="text/css",
     )
