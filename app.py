@@ -18,6 +18,33 @@ st.set_page_config(
     page_icon="🌦️",
 )
 
+
+# Funzione per inizializzare il database e garantire la presenza della colonna Umidita_Perc
+def init_db():
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS misurazioni (
+            Data TEXT PRIMARY KEY,
+            Temperatura_Min_C REAL,
+            Temperatura_Max_C REAL,
+            Temperatura_Media_C REAL,
+            Umidita_Perc REAL,
+            Pioggia_mm REAL
+        )
+    """)
+  # Se la tabella esisteva già ma senza la colonna Umidita_Perc, la aggiunge in automatico
+  try:
+    cursor.execute("ALTER TABLE misurazioni ADD COLUMN Umidita_Perc REAL;")
+  except sqlite3.OperationalError:
+    pass  # La colonna esiste già
+  conn.commit()
+  conn.close()
+
+
+# Inizializza subito il DB
+init_db()
+
 # Stile CSS personalizzato per centrare titoli, metriche e tabelle in tutte le pagine
 st.markdown(
     """
@@ -63,7 +90,7 @@ def load_data():
         "Temperatura_Min_C",
         "Temperatura_Max_C",
         "Temperatura_Media_C",
-        "Umidita_%",
+        "Umidita_Perc",
         "Pioggia_mm",
     ])
   conn.close()
@@ -312,7 +339,6 @@ if menu == "📊 Dashboard":
   for m_num in range(1, 13):
     m_data = temp_df[temp_df["Mese_Num"] == m_num]
     if not m_data.empty:
-      # Conversione sicura per evitare crash nella ricerca dei massimi/minimi
       tmax_ser = pd.to_numeric(m_data["Temperatura_Max_C"], errors="coerce")
       tmin_ser = pd.to_numeric(m_data["Temperatura_Min_C"], errors="coerce")
 
@@ -402,13 +428,15 @@ elif menu == "🔍 Consultazione Database":
       & (df["Data_dt"].dt.date <= end_date)
   ]
   st.dataframe(
-      filtered_df.drop(columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"),
+      filtered_df.drop(
+          columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"
+      ),
       use_container_width=True,
       hide_index=True,
   )
 
 # ==========================================
-# 3. DATI GIORNALIERI (CON DIAGNOSTICA ERRORI)
+# 3. DATI GIORNALIERI
 # ==========================================
 elif menu == "📅 Dati Giornalieri":
   st.header("Dati Giornalieri & Grafico con Confronto Storico")
@@ -465,45 +493,6 @@ elif menu == "📅 Dati Giornalieri":
   else:
     st.subheader(f"📊 Riepilogo Estremi - {sel_mese_str} {sel_anno}")
 
-    # =========================================================================
-    # BLOCCO DI DIAGNOSTICA SCOVA-ERRORI:
-    # Controlla se ci sono righe con valori non numerici in questo mese
-    # =========================================================================
-    numeric_cols_check = [
-        "Temperatura_Min_C",
-        "Temperatura_Max_C",
-        "Temperatura_Media_C",
-        "Pioggia_mm",
-    ]
-    bad_rows_list = []
-    for col in numeric_cols_check:
-      if col in m_data.columns:
-        converted = pd.to_numeric(m_data[col], errors="coerce")
-        mask_err = converted.isna() & m_data[col].notna() & (m_data[col] != "")
-        if mask_err.any():
-          bad_rows_list.append(m_data[mask_err])
-
-    if bad_rows_list:
-      bad_df = pd.concat(bad_rows_list).drop_duplicates()
-      st.error(
-          "🚨 **ERRORE NEL DATABASE TROVATO!** Le seguenti righe contengono"
-          " valori non numerici (es. testo, spazi, caratteri strani) che"
-          " bloccano i calcoli. Correggile nel database:"
-      )
-      st.dataframe(
-          bad_df[
-              [
-                  "Data",
-                  "Temperatura_Min_C",
-                  "Temperatura_Max_C",
-                  "Temperatura_Media_C",
-                  "Pioggia_mm",
-              ]
-          ],
-          use_container_width=True,
-      )
-
-    # Conversione sicura per il calcolo delle metriche e grafici senza crash
     tmax_max = pd.to_numeric(m_data["Temperatura_Max_C"], errors="coerce").max()
     tmin_min = pd.to_numeric(m_data["Temperatura_Min_C"], errors="coerce").min()
     tmed_mean = pd.to_numeric(
@@ -545,12 +534,11 @@ elif menu == "📅 Dati Giornalieri":
         f"{rain_sum:.1f} mm" if not pd.isna(rain_sum) else "0.0 mm",
     )
 
-    st.caption(
-        f"💡 Media storica di {sel_mese_str} calcolata sul totale degli anni:"
-        f" {hist_tmed_mean:.1f} °C"
-        if not pd.isna(hist_tmed_mean)
-        else ""
-    )
+    if not pd.isna(hist_tmed_mean):
+      st.markdown(
+          f"<p style='text-align: center; color: gray;'>💡 Media storica di {sel_mese_str} calcolata sul totale degli anni: {hist_tmed_mean:.1f} °C</p>",
+          unsafe_allow_html=True,
+      )
 
     st.markdown("---")
     st.subheader(
@@ -568,7 +556,6 @@ elif menu == "📅 Dati Giornalieri":
     if hist_prev.empty:
       hist_prev = hist_mese_data
 
-    # Pulizia temporanea per i gruppi storici
     hist_prev["T_Med_Num"] = pd.to_numeric(
         hist_prev["Temperatura_Media_C"], errors="coerce"
     )
@@ -653,7 +640,9 @@ elif menu == "📅 Dati Giornalieri":
 
     st.subheader("📋 Tutte le misurazioni del mese")
     st.dataframe(
-        m_data.drop(columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"),
+        m_data.drop(
+            columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"
+        ),
         use_container_width=True,
         hide_index=True,
     )
@@ -683,12 +672,28 @@ elif menu == "📈 Dati Mensili":
     g_rain = pd.to_numeric(group["Pioggia_mm"], errors="coerce")
 
     max_idx = g_max.idxmax() if not g_max.dropna().empty else None
-    max_val = group.loc[max_idx, "Temperatura_Max_C"] if max_idx is not None else "N.D."
-    max_date = str(group.loc[max_idx, "Data"]).split()[0] if max_idx is not None else ""
+    max_val = (
+        group.loc[max_idx, "Temperatura_Max_C"]
+        if max_idx is not None
+        else "N.D."
+    )
+    max_date = (
+        str(group.loc[max_idx, "Data"]).split()[0]
+        if max_idx is not None
+        else ""
+    )
 
     min_idx = g_min.idxmin() if not g_min.dropna().empty else None
-    min_val = group.loc[min_idx, "Temperatura_Min_C"] if min_idx is not None else "N.D."
-    min_date = str(group.loc[min_idx, "Data"]).split()[0] if min_idx is not None else ""
+    min_val = (
+        group.loc[min_idx, "Temperatura_Min_C"]
+        if min_idx is not None
+        else "N.D."
+    )
+    min_date = (
+        str(group.loc[min_idx, "Data"]).split()[0]
+        if min_idx is not None
+        else ""
+    )
 
     ann_tmed = g_med.mean()
     rain_sum = g_rain.sum()
@@ -699,18 +704,25 @@ elif menu == "📈 Dati Mensili":
         "Data Max": max_date,
         "Temp Min Assoluta (°C)": str(min_val),
         "Data Min": min_date,
-        "Temp Media (°C)": f"{ann_tmed:.1f}" if not pd.isna(ann_tmed) else "N.D.",
-        "vs Storica (°C)": f"{(ann_tmed - overall_hist_tmed):+.1f}" if not pd.isna(ann_tmed) and not pd.isna(overall_hist_tmed) else "0.0",
-        "Pioggia Totale (mm)": f"{rain_sum:.1f}" if not pd.isna(rain_sum) else "0.0",
+        "Temp Media (°C)": (
+            f"{ann_tmed:.1f}" if not pd.isna(ann_tmed) else "N.D."
+        ),
+        "vs Storica (°C)": (
+            f"{(ann_tmed - overall_hist_tmed):+.1f}"
+            if not pd.isna(ann_tmed) and not pd.isna(overall_hist_tmed)
+            else "0.0"
+        ),
+        "Pioggia Totale (mm)": (
+            f"{rain_sum:.1f}" if not pd.isna(rain_sum) else "0.0"
+        ),
     })
 
   annual_df = pd.DataFrame(annual_list)
-  st.markdown(
-      f"💡 **Media storica generale (tutti gli anni):**"
-      f" {overall_hist_tmed:.1f} °C"
-      if not pd.isna(overall_hist_tmed)
-      else ""
-  )
+  if not pd.isna(overall_hist_tmed):
+    st.markdown(
+        f"<p style='text-align: center;'>💡 <b>Media storica generale (tutti gli anni):</b> {overall_hist_tmed:.1f} °C</p>",
+        unsafe_allow_html=True,
+    )
   st.dataframe(annual_df, use_container_width=True, hide_index=True)
 
   if not annual_df.empty:
@@ -1059,15 +1071,31 @@ elif menu == "📁 Importa / Esporta Dati":
       st.error(f"Errore nell'importazione: {e}")
 
   st.subheader("📤 Esporta database")
-  if not df.empty:
-    csv_bytes = (
-        df.drop(columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore")
-        .to_csv(index=False)
-        .encode("utf-8")
-    )
-    st.download_button(
-        "Scarica dati in formato CSV",
-        data=csv_bytes,
-        file_name="export_meteo.csv",
-        mime="text/csv",
-    )
+  col_exp1, col_exp2 = st.columns(2)
+
+  with col_exp1:
+    if not df.empty:
+      csv_bytes = (
+          df.drop(
+              columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"
+          )
+          .to_csv(index=False)
+          .encode("utf-8")
+      )
+      st.download_button(
+          "📥 Scarica dati in CSV",
+          data=csv_bytes,
+          file_name="export_meteo.csv",
+          mime="text/csv",
+      )
+
+  with col_exp2:
+    if os.path.exists(DB_NAME):
+      with open(DB_NAME, "rb") as f:
+        db_bytes = f.read()
+      st.download_button(
+          "📥 Scarica Database (.db)",
+          data=db_bytes,
+          file_name="meteo_database.db",
+          mime="application/octet-stream",
+      )
