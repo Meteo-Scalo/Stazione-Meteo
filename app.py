@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 import io
 import os
 import matplotlib.pyplot as plt
+import numpy as np
 from PIL import Image
 import pandas as pd
 import requests
@@ -524,7 +525,6 @@ elif menu == "📅 Dati Giornalieri":
 
     st.markdown("---")
 
-    # Frase descrittiva centrata e in grassetto (senza il sottotitolo precedente)
     st.markdown(
         "<p style='text-align: center;'><b>Confronto tra la temperatura"
         " media misurata e la media storica, insieme all'andamento dell'accumulo"
@@ -539,7 +539,6 @@ elif menu == "📅 Dati Giornalieri":
     if hist_prev.empty:
       hist_prev = hist_mese_data
 
-    # Calcolo temperatura media storica giornaliera
     hist_prev["T_Med_Num"] = pd.to_numeric(
         hist_prev["Temperatura_Media_C"], errors="coerce"
     )
@@ -550,7 +549,6 @@ elif menu == "📅 Dati Giornalieri":
     )
     hist_daily_mean.columns = ["Giorno", "Temp_Media_Storica"]
 
-    # Calcolo accumulo medio storico di pioggia cumulativo
     hist_prev["Rain_Num"] = pd.to_numeric(
         hist_prev["Pioggia_mm"], errors="coerce"
     ).fillna(0)
@@ -599,7 +597,6 @@ elif menu == "📅 Dati Giornalieri":
         2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True
     )
 
-    # Subplot 1: Temperature
     ax1.plot(
         m_data_plot["Giorno"],
         m_data_plot["T_Med_Num"],
@@ -627,7 +624,6 @@ elif menu == "📅 Dati Giornalieri":
     ax1.grid(True, linestyle="--", alpha=0.5)
     ax1.legend(loc="upper right", fontsize=7)
 
-    # Subplot 2: Grafico a linee per l'accumulo pioggia (corrente vs storico)
     ax2.plot(
         m_data_plot["Giorno"],
         m_data_plot["Pioggia_Cumulata_Corrente"],
@@ -754,13 +750,12 @@ elif menu == "📈 Dati Mensili":
 
   if not annual_df.empty:
     st.markdown("---")
-    st.subheader(
-        "📱 Grafico Annuale Formato Instagram (4:5) - Temperatura & Pioggia"
-    )
-    st.write(
-        "Confronto tra la temperatura media mensile misurata nell'anno"
-        " selezionato e la media storica, insieme al totale delle piogge"
-        " mensili."
+    # Frase descrittiva centrata e in grassetto (senza il titolo precedente)
+    st.markdown(
+        "<p style='text-align: center;'><b>Confronto tra la temperatura"
+        " media mensile misurata nell'anno selezionato e la media storica,"
+        " insieme al totale delle piogge mensili e alla media storica.</b></p>",
+        unsafe_allow_html=True,
     )
 
     anni_disponibili = annual_df["Anno"].tolist()
@@ -816,8 +811,31 @@ elif menu == "📈 Dati Mensili":
       )
       hist_monthly_mean.columns = ["Data_dt", "Temp_Media_Storica"]
 
+      # Calcolo pioggia media storica mensile
+      hist_prev_annuale_rain = hist_prev_annuale.copy()
+      hist_prev_annuale_rain["Rain_Num"] = pd.to_numeric(
+          hist_prev_annuale_rain["Pioggia_mm"], errors="coerce"
+      ).fillna(0)
+      hist_prev_annuale_rain["Mese"] = hist_prev_annuale_rain["Data_dt"].dt.month
+      hist_prev_annuale_rain["Anno_Val"] = hist_prev_annuale_rain[
+          "Data_dt"
+      ].dt.year
+
+      monthly_by_year = (
+          hist_prev_annuale_rain.groupby(["Anno_Val", "Mese"])["Rain_Num"]
+          .sum()
+          .reset_index()
+      )
+      hist_monthly_rain = (
+          monthly_by_year.groupby("Mese")["Rain_Num"].mean().reset_index()
+      )
+      hist_monthly_rain.columns = ["Data_dt", "Pioggia_Media_Storica"]
+
       mensile_anno = pd.merge(
           mensile_anno, hist_monthly_mean, on="Data_dt", how="left"
+      )
+      mensile_anno = pd.merge(
+          mensile_anno, hist_monthly_rain, on="Data_dt", how="left"
       )
 
       fig_ann, (ax1_ann, ax2_ann) = plt.subplots(
@@ -838,9 +856,10 @@ elif menu == "📈 Dati Mensili":
           "Dic",
       ]
       x_labels = [mesi_brevi[int(m) - 1] for m in mensile_anno["Data_dt"]]
+      x = np.arange(len(x_labels))
 
       ax1_ann.plot(
-          x_labels,
+          x,
           mensile_anno["T_Med_Num"],
           label=f"Media Misurata {sel_anno_grafico} (°C)",
           color="#2ca02c",
@@ -849,7 +868,7 @@ elif menu == "📈 Dati Mensili":
           markersize=4,
       )
       ax1_ann.plot(
-          x_labels,
+          x,
           mensile_anno["Temp_Media_Storica"],
           label="Media Storica (Anni Prec.) (°C)",
           color="#ff7f0e",
@@ -868,17 +887,28 @@ elif menu == "📈 Dati Mensili":
       ax1_ann.grid(True, linestyle="--", alpha=0.5)
       ax1_ann.legend(loc="upper right", fontsize=7)
 
+      width = 0.35
       ax2_ann.bar(
-          x_labels,
+          x - width / 2,
           mensile_anno["Rain_Num"],
-          label="Pioggia Totale (mm)",
+          width,
+          label=f"Pioggia {sel_anno_grafico} (mm)",
           color="#1c83e1",
           alpha=0.8,
-          width=0.6,
+      )
+      ax2_ann.bar(
+          x + width / 2,
+          mensile_anno["Pioggia_Media_Storica"],
+          width,
+          label="Media Storica (mm)",
+          color="#d62728",
+          alpha=0.8,
       )
       ax2_ann.set_ylabel("Pioggia (mm)", fontsize=9)
       ax2_ann.grid(True, linestyle="--", alpha=0.5)
       ax2_ann.legend(loc="upper right", fontsize=7)
+      ax2_ann.set_xticks(x)
+      ax2_ann.set_xticklabels(x_labels)
 
       plt.tight_layout()
       st.pyplot(fig_ann)
