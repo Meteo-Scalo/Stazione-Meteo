@@ -218,6 +218,7 @@ if menu == "📊 Dashboard":
       except (ValueError, TypeError):
         pressure_val = "N.D."
 
+      # Gestione della cronologia locale per il calcolo del delta pressione (ultime 3 ore)
       if "pressure_history" not in st.session_state:
         st.session_state["pressure_history"] = []
 
@@ -227,9 +228,14 @@ if menu == "📊 Dashboard":
       )
 
       if current_pressure is not None:
-        st.session_state["pressure_history"].append(
-            (current_time, current_pressure)
-        )
+        if (
+            not st.session_state["pressure_history"]
+            or st.session_state["pressure_history"][-1][1] != current_pressure
+        ):
+          st.session_state["pressure_history"].append(
+              (current_time, current_pressure)
+          )
+
         three_hours_ago = current_time - timedelta(hours=3)
         st.session_state["pressure_history"] = [
             (t, p)
@@ -241,14 +247,14 @@ if menu == "📊 Dashboard":
       if len(history) >= 2 and current_pressure is not None:
         oldest_pressure = history[0][1]
         diff = current_pressure - oldest_pressure
-        if diff > 0.6:
-          press_trend_str = "In aumento 🟢 ↗️"
-        elif diff < -0.6:
-          press_trend_str = "In calo 🔴 ↘️"
+        if diff > 0.1:
+          press_trend_str = f"+{diff:.1f} hPa ↗️"
+        elif diff < -0.1:
+          press_trend_str = f"{diff:.1f} hPa ↘️"
         else:
-          press_trend_str = "Stabile ➡️"
+          press_trend_str = f"{diff:+.1f} hPa ➡️"
       else:
-        press_trend_str = "Stabile ➡️"
+        press_trend_str = "In calcolo... ⏳"
 
       col_l1, col_l2, col_l3, col_l4, col_l5, col_l6 = st.columns(6)
       with col_l1:
@@ -267,7 +273,7 @@ if menu == "📊 Dashboard":
       with col_l4:
         st.metric(label="⏱️ Pressione", value=pressure_val)
       with col_l5:
-        st.metric(label="📉 Trend Pressione", value=press_trend_str)
+        st.metric(label="📉 Delta Pressione", value=press_trend_str)
       with col_l6:
         st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
 
