@@ -131,7 +131,6 @@ menu = st.sidebar.radio(
         "📅 Dati Giornalieri",
         "📈 Dati Mensili",
         "📊 Grafici Annuali",
-        "➕ Inserisci Misura",
         "📁 Importa / Esporta Dati",
     ],
 )
@@ -154,7 +153,7 @@ except Exception:
 if df.empty:
   st.warning(
       "Il database è attualmente vuoto. Utilizza la sezione 'Importa / Esporta"
-      " Dati' o 'Inserisci Misura' per popolare le misurazioni."
+      " Dati' per popolare le misurazioni."
   )
 else:
   if "Data_dt" not in df.columns:
@@ -218,7 +217,6 @@ if menu == "📊 Dashboard":
       except (ValueError, TypeError):
         pressure_val = "N.D."
 
-      # 5 Colonne con i dati meteo attuali (senza trend pressione)
       col_l1, col_l2, col_l3, col_l4, col_l5 = st.columns(5)
       with col_l1:
         st.metric(label="🌡️ Temperatura", value=temp_val)
@@ -366,24 +364,31 @@ if menu == "📊 Dashboard":
 elif menu == "🔍 Consultazione Database":
   st.header("Consultazione Database (Intervallo Date)")
 
-  min_d = df["Data_dt"].min().date()
-  max_d = df["Data_dt"].max().date()
+  if df.empty:
+    st.info("Il database è attualmente vuoto.")
+  else:
+    min_d = df["Data_dt"].min().date()
+    max_d = df["Data_dt"].max().date()
 
-  col1, col2 = st.columns(2)
-  start_date = col1.date_input("Data Inizio", min_d)
-  end_date = col2.date_input("Data Fine", max_d)
+    col1, col2 = st.columns(2)
+    start_date = col1.date_input(
+        "Data Inizio", min_d, min_value=min_d, max_value=max_d
+    )
+    end_date = col2.date_input(
+        "Data Fine", max_d, min_value=min_d, max_value=max_d
+    )
 
-  filtered_df = df[
-      (df["Data_dt"].dt.date >= start_date)
-      & (df["Data_dt"].dt.date <= end_date)
-  ]
-  st.dataframe(
-      filtered_df.drop(
-          columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"
-      ),
-      use_container_width=True,
-      hide_index=True,
-  )
+    filtered_df = df[
+        (df["Data_dt"].dt.date >= start_date)
+        & (df["Data_dt"].dt.date <= end_date)
+    ]
+    st.dataframe(
+        filtered_df.drop(
+            columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
 
 # ==========================================
 # 3. DATI GIORNALIERI
@@ -990,85 +995,7 @@ elif menu == "📊 Grafici Annuali":
     plt.close(fig_glob)
 
 # ==========================================
-# 6. INSERISCI MISURA MANUALE (PROTETTO)
-# ==========================================
-elif menu == "➕ Inserisci Misura":
-  st.header("➕ Inserimento Manuale Dati (Area Riservata)")
-
-  if not st.session_state["auth_ok"]:
-    pwd = st.text_input(
-        "Inserisci la password amministratore per sbloccare questa sezione:",
-        type="password",
-    )
-    if st.button("Accedi"):
-      if pwd == admin_password:
-        st.session_state["auth_ok"] = True
-        st.rerun()
-      else:
-        st.error("❌ Password errata.")
-    st.stop()
-
-  st.success("🔓 Accesso autorizzato")
-  if st.button("🔒 Esci dall'area protetta"):
-    st.session_state["auth_ok"] = False
-    st.rerun()
-
-  with st.form("form_inserimento"):
-    col1, col2 = st.columns(2)
-    with col1:
-      data_ins = st.date_input("Data", datetime.today())
-      t_min = st.number_input(
-          "Temperatura Min (°C)", value=15.0, format="%.1f"
-      )
-      t_max = st.number_input(
-          "Temperatura Max (°C)", value=25.0, format="%.1f"
-      )
-    with col2:
-      t_med = st.number_input(
-          "Temperatura Media (°C)", value=20.0, format="%.1f"
-      )
-      hum = st.number_input("Umidità (%)", value=60.0, format="%.1f")
-      rain = st.number_input("Pioggia (mm)", value=0.0, format="%.1f")
-
-    submit = st.form_submit_button("Salva nel Database")
-    if submit:
-      try:
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        cursor.execute("""
-                    CREATE TABLE IF NOT EXISTS misurazioni (
-                        Data TEXT PRIMARY KEY,
-                        Temperatura_Min_C REAL,
-                        Temperatura_Max_C REAL,
-                        Temperatura_Media_C REAL,
-                        Umidita_Perc REAL,
-                        Pioggia_mm REAL
-                    )
-                """)
-        cursor.execute(
-            """
-                    INSERT OR REPLACE INTO misurazioni (Data, Temperatura_Min_C, Temperatura_Max_C, Temperatura_Media_C, Umidita_Perc, Pioggia_mm)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """,
-            (
-                data_ins.strftime("%Y-%m-%d"),
-                t_min,
-                t_max,
-                t_med,
-                hum,
-                rain,
-            ),
-        )
-        conn.commit()
-        conn.close()
-        st.cache_data.clear()
-        st.success("Misura registrata con successo nel database!")
-        st.rerun()
-      except Exception as e:
-        st.error(f"Errore durante il salvataggio: {e}")
-
-# ==========================================
-# 7. IMPORTA / ESPORTA DATI (PROTETTO)
+# 6. IMPORTA / ESPORTA DATI (PROTETTO)
 # ==========================================
 elif menu == "📁 Importa / Esporta Dati":
   st.header("📁 Gestione File & Backup (Area Riservata)")
