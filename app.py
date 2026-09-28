@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 import io
 import os
 import matplotlib.pyplot as plt
@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 
-# Funzione per inizializzare il database e la tabella di log della pressione
+# Funzione per inizializzare il database
 def init_db():
   conn = sqlite3.connect(DB_NAME)
   cursor = conn.cursor()
@@ -32,13 +32,6 @@ def init_db():
             Temperatura_Media_C REAL,
             Umidita_Perc REAL,
             Pioggia_mm REAL
-        )
-    """)
-  # Tabella persistente per tracciare la pressione e calcolare il delta storico (anche dopo F5)
-  cursor.execute("""
-        CREATE TABLE IF NOT EXISTS pressione_log (
-            Timestamp TEXT PRIMARY KEY,
-            Pressione REAL
         )
     """)
   try:
@@ -225,56 +218,7 @@ if menu == "📊 Dashboard":
       except (ValueError, TypeError):
         pressure_val = "N.D."
 
-      # Salvataggio e lettura persistente della pressione nel DB per calcolare il delta a 3 ore
-      press_trend_str = "In calcolo... ⏳"
-      current_pressure = (
-          float(pressure_raw) if pressure_raw is not None else None
-      )
-
-      if current_pressure is not None:
-        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        conn_db = sqlite3.connect(DB_NAME)
-        c_db = conn_db.cursor()
-        try:
-          c_db.execute(
-              "INSERT OR REPLACE INTO pressione_log (Timestamp, Pressione)"
-              " VALUES (?, ?)",
-              (now_str, current_pressure),
-          )
-          # Rimuoviamo i dati più vecchi di 3 ore per alleggerire il database
-          t_lim = (datetime.now() - timedelta(hours=3)).strftime(
-              "%Y-%m-%d %H:%M:%S"
-          )
-          c_db.execute(
-              "DELETE FROM pressione_log WHERE Timestamp < ?", (t_lim,)
-          )
-          conn_db.commit()
-        except Exception:
-          pass
-
-        # Recuperiamo la misura più vecchia salvata nelle ultime 3 ore
-        t_target = (datetime.now() - timedelta(hours=3)).strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-        hist_p_df = pd.read_sql(
-            "SELECT * FROM pressione_log WHERE Timestamp >= ? ORDER BY"
-            " Timestamp ASC",
-            conn_db,
-            params=(t_target,),
-        )
-        conn_db.close()
-
-        if not hist_p_df.empty:
-          old_pressure = hist_p_df.iloc[0]["Pressione"]
-          diff_p = current_pressure - float(old_pressure)
-          if diff_p > 0.1:
-            press_trend_str = f"+{diff_p:.1f} hPa ↗️ vs 3h fa"
-          elif diff_p < -0.1:
-            press_trend_str = f"{diff_p:.1f} hPa ↘️ vs 3h fa"
-          else:
-            press_trend_str = f"{diff_p:+.1f} hPa ➡️ vs 3h fa"
-
-      # 5 Colonne con il delta integrato sotto la pressione
+      # 5 Colonne con i dati meteo attuali (senza trend pressione)
       col_l1, col_l2, col_l3, col_l4, col_l5 = st.columns(5)
       with col_l1:
         st.metric(label="🌡️ Temperatura", value=temp_val)
@@ -290,9 +234,7 @@ if menu == "📊 Dashboard":
             ),
         )
       with col_l4:
-        st.metric(
-            label="⏱️ Pressione", value=pressure_val, delta=press_trend_str
-        )
+        st.metric(label="⏱️ Pressione", value=pressure_val)
       with col_l5:
         st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
 
