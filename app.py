@@ -13,6 +13,9 @@ from streamlit_autorefresh import st_autorefresh
 # Nome del database SQLite condiviso
 DB_NAME = "meteo_database.db"
 
+# URL del file Excel raw su GitHub
+URL_GITHUB_FILE = "https://raw.githubusercontent.com/Meteo-Scalo/Stazione-Meteo/main/dati_meteo_esempio.xlsx"
+
 st.set_page_config(
     page_title="Stazione meteo amatoriale di Monterotondo Scalo",
     layout="wide",
@@ -43,6 +46,21 @@ def init_db():
 
 
 init_db()
+
+
+# Funzione per sincronizzare automaticamente i dati da GitHub all'avvio
+def sync_from_github():
+  try:
+    df_github = pd.read_excel(URL_GITHUB_FILE)
+    conn = sqlite3.connect(DB_NAME)
+    df_github.to_sql("misurazioni", conn, if_exists="replace", index=False)
+    conn.close()
+  except Exception:
+    # Se non c'è connessione o si verifica un errore, l'app usa i dati locali
+    pass
+
+
+sync_from_github()
 
 # Stile CSS personalizzato
 st.markdown(
@@ -131,7 +149,7 @@ menu = st.sidebar.radio(
         "📅 Dati Giornalieri",
         "📈 Dati Mensili",
         "📊 Grafici Annuali",
-        "📁 Importa / Esporta Dati",
+        "📁 Esporta Dati",
     ],
 )
 
@@ -152,8 +170,8 @@ except Exception:
 
 if df.empty:
   st.warning(
-      "Il database è attualmente vuoto. Utilizza la sezione 'Importa / Esporta"
-      " Dati' per popolare le misurazioni."
+      "Il database è attualmente vuoto. Controlla il file di sincronizzazione"
+      " su GitHub."
   )
 else:
   if "Data_dt" not in df.columns:
@@ -995,10 +1013,10 @@ elif menu == "📊 Grafici Annuali":
     plt.close(fig_glob)
 
 # ==========================================
-# 6. IMPORTA / ESPORTA DATI (PROTETTO)
+# 6. ESPORTA DATI (PROTETTO)
 # ==========================================
-elif menu == "📁 Importa / Esporta Dati":
-  st.header("📁 Gestione File & Backup (Area Riservata)")
+elif menu == "📁 Esporta Dati":
+  st.header("📁 Esporta Dati & Backup (Area Riservata)")
 
   if not st.session_state["auth_ok"]:
     pwd = st.text_input(
@@ -1018,28 +1036,6 @@ elif menu == "📁 Importa / Esporta Dati":
   if st.button("🔒 Esci dall'area protetta", key="btn_out_import"):
     st.session_state["auth_ok"] = False
     st.rerun()
-
-  st.subheader("📥 Importa da file esterno")
-  uploaded_file = st.file_uploader(
-      "Carica file CSV o Excel", type=["csv", "xlsx", "xls"]
-  )
-  if uploaded_file is not None:
-    try:
-      if uploaded_file.name.endswith((".xlsx", ".xls")):
-        df_up = pd.read_excel(uploaded_file)
-      else:
-        df_up = pd.read_csv(uploaded_file)
-
-      conn = sqlite3.connect(DB_NAME)
-      df_up.to_sql("misurazioni", conn, if_exists="replace", index=False)
-      conn.close()
-      st.cache_data.clear()
-      st.success(
-          "Database aggiornato con successo tramite il file caricato!"
-      )
-      st.rerun()
-    except Exception as e:
-      st.error(f"Errore nell'importazione: {e}")
 
   st.subheader("📤 Esporta database")
   col_exp1, col_exp2 = st.columns(2)
