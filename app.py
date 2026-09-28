@@ -48,7 +48,7 @@ def init_db():
 init_db()
 
 
-# Funzione per sincronizzare automaticamente i dati da GitHub all'avvio
+# Funzione per sincronizzare automaticamente i dati dal file Excel di GitHub all'avvio
 def sync_from_github():
   try:
     df_github = pd.read_excel(URL_GITHUB_FILE)
@@ -56,7 +56,6 @@ def sync_from_github():
     df_github.to_sql("misurazioni", conn, if_exists="replace", index=False)
     conn.close()
   except Exception:
-    # Se non c'è connessione o si verifica un errore, l'app usa i dati locali
     pass
 
 
@@ -97,10 +96,12 @@ def load_data():
         "Pioggia_mm",
     ])
   conn.close()
-  if not df.empty:
+  if not df.empty and "Data" in df.columns:
     df["Data_dt"] = pd.to_datetime(df["Data"], errors="coerce")
     df["Data"] = df["Data_dt"].dt.strftime("%Y-%m-%d")
     df = df.dropna(subset=["Data_dt"]).sort_values("Data_dt")
+  else:
+    df["Data_dt"] = pd.to_datetime([], errors="coerce")
   return df
 
 
@@ -168,11 +169,12 @@ try:
 except Exception:
   admin_password = "admin123"
 
-if df.empty:
+if df.empty or "Data_dt" not in df.columns:
   st.warning(
-      "Il database è attualmente vuoto. Controlla il file di sincronizzazione"
-      " su GitHub."
+      "Il database è attualmente vuoto o il file Excel su GitHub non contiene"
+      " dati validi."
   )
+  st.stop()
 else:
   if "Data_dt" not in df.columns:
     df["Data_dt"] = pd.to_datetime(df["Data"], errors="coerce")
