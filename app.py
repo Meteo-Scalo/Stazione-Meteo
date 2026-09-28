@@ -86,12 +86,13 @@ def load_data():
   return df
 
 
-# Funzione per recuperare i dati live da Weather Underground PWS API
+# Funzione per recuperare i dati live e lo storico giornaliero da Weather Underground PWS API
 def fetch_wunderground_data(station_id, api_key):
   if not station_id or not api_key:
     return None, "Credenziali Weather Underground mancanti nei Secrets."
 
-  url = f"https://api.weather.com/v2/pws/observations/current?stationId={station_id}&format=json&units=m&apiKey={api_key}"
+  # Usiamo 'observations/all' per ottenere tutte le letture odierne e calcolare il delta storico
+  url = f"https://api.weather.com/v2/pws/observations/all?stationId={station_id}&format=json&units=m&apiKey={api_key}"
 
   try:
     response = requests.get(url, timeout=10)
@@ -184,7 +185,8 @@ if menu == "📊 Dashboard":
 
   if is_online:
     try:
-      obs = wu_data["observations"][0]
+      obs_list = wu_data["observations"]
+      obs = obs_list[0]  # L'osservazione più recente
       metric = obs.get("metric", {})
 
       temp_raw = metric.get("temp")
@@ -218,45 +220,44 @@ if menu == "📊 Dashboard":
       except (ValueError, TypeError):
         pressure_val = "N.D."
 
-      # Gestione della cronologia locale per il calcolo del delta pressione (ultime 3 ore)
-      if "pressure_history" not in st.session_state:
-        st.session_state["pressure_history"] = []
-
-      current_time = datetime.now()
+      # Calcolo del delta pressione a 3 ore usando lo storico giornaliero dell'API
+      press_trend_str = "N.D."
       current_pressure = (
           float(pressure_raw) if pressure_raw is not None else None
       )
 
-      if current_pressure is not None:
-        if (
-            not st.session_state["pressure_history"]
-            or st.session_state["pressure_history"][-1][1] != current_pressure
-        ):
-          st.session_state["pressure_history"].append(
-              (current_time, current_pressure)
-          )
+      if current_pressure is not None and len(obs_list) > 1:
+        current_time = datetime.now()
+        target_time = current_time - timedelta(hours=3)
 
-        three_hours_ago = current_time - timedelta(hours=3)
-        st.session_state["pressure_history"] = [
-            (t, p)
-            for t, p in st.session_state["pressure_history"]
-            if t >= three_hours_ago
-        ]
+        best_obs = None
+        min_diff = timedelta(hours=99)
 
-      history = st.session_state["pressure_history"]
-      if len(history) >= 2 and current_pressure is not None:
-        oldest_pressure = history[0][1]
-        diff = current_pressure - oldest_pressure
-        if diff > 0.1:
-          press_trend_str = f"+{diff:.1f} hPa ↗️"
-        elif diff < -0.1:
-          press_trend_str = f"{diff:.1f} hPa ↘️"
-        else:
-          press_trend_str = f"{diff:+.1f} hPa ➡️"
-      else:
-        press_trend_str = "In calcolo... ⏳"
+        for o in obs_list:
+          t_str = o.get("obsTimeLocal")
+          try:
+            dt = pd.to_datetime(t_str)
+            diff = abs(dt - target_time)
+            if diff < min_diff:
+              min_diff = diff
+              best_obs = o
+          except:
+            continue
 
-      col_l1, col_l2, col_l3, col_l4, col_l5, col_l6 = st.columns(6)
+        if best_obs:
+          old_metric = best_obs.get("metric", {})
+          old_pressure = old_metric.get("pressure")
+          if old_pressure is not None:
+            diff_p = current_pressure - float(old_pressure)
+            if diff_p > 0.1:
+              press_trend_str = f"+{diff_p:.1f} hPa ↗️ vs 3h fa"
+            elif diff_p < -0.1:
+              press_trend_str = f"{diff_p:.1f} hPa ↘️ vs 3h fa"
+            else:
+              press_trend_str = f"{diff_p:+.1f} hPa ➡️ vs 3h fa"
+
+      # 5 Colonne pulite con il delta integrato sotto la pressione
+      col_l1, col_l2, col_l3, col_l4, col_l5 = st.columns(5)
       with col_l1:
         st.metric(label="🌡️ Temperatura", value=temp_val)
       with col_l2:
@@ -271,10 +272,10 @@ if menu == "📊 Dashboard":
             ),
         )
       with col_l4:
-        st.metric(label="⏱️ Pressione", value=pressure_val)
+        st.metric(
+            label="⏱️ Pressione", value=pressure_val, delta=press_trend_str
+        )
       with col_l5:
-        st.metric(label="📉 Delta Pressione", value=press_trend_str)
-      with col_l6:
         st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
 
       st.markdown(
@@ -499,7 +500,6 @@ elif menu == "📅 Dati Giornalieri":
         else 0.0
     )
 
-    # Calcolo pioggia media storica mensile per il riepilogo
     hist_rain_df = df[df["Data_dt"].dt.month == sel_mese_num].copy()
     hist_rain_df["Anno_Val"] = hist_rain_df["Data_dt"].dt.year
     hist_rain_df["Rain_Num"] = pd.to_numeric(
