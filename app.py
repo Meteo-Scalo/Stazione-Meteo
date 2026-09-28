@@ -20,7 +20,7 @@ st.set_page_config(
 )
 
 
-# Funzione per inizializzare il database e garantire la presenza della colonna Umidita_Perc
+# Funzione per inizializzare il database e la tabella di log della pressione
 def init_db():
   conn = sqlite3.connect(DB_NAME)
   cursor = conn.cursor()
@@ -32,6 +32,13 @@ def init_db():
             Temperatura_Media_C REAL,
             Umidita_Perc REAL,
             Pioggia_mm REAL
+        )
+    """)
+  # Tabella persistente per tracciare la pressione e calcolare il delta storico (anche dopo F5)
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS pressione_log (
+            Timestamp TEXT PRIMARY KEY,
+            Pressione REAL
         )
     """)
   try:
@@ -63,7 +70,7 @@ st.markdown(
 st_autorefresh(interval=10 * 60 * 1000, key="weather_autorefresh")
 
 
-# Funzione per connettersi e caricare i dati dal database con standardizzazione delle date
+# Funzione per connettersi e caricare i dati dal database
 @st.cache_data(ttl=30)
 def load_data():
   conn = sqlite3.connect(DB_NAME)
@@ -86,13 +93,12 @@ def load_data():
   return df
 
 
-# Funzione per recuperare i dati live e lo storico giornaliero da Weather Underground PWS API
+# Funzione per recuperare i dati live dall'endpoint standard 'current'
 def fetch_wunderground_data(station_id, api_key):
   if not station_id or not api_key:
     return None, "Credenziali Weather Underground mancanti nei Secrets."
 
-  # Usiamo 'observations/all' per ottenere tutte le letture odierne e calcolare il delta storico
-  url = f"https://api.weather.com/v2/pws/observations/all?stationId={station_id}&format=json&units=m&apiKey={api_key}"
+  url = f"https://api.weather.com/v2/pws/observations/current?stationId={station_id}&format=json&units=m&apiKey={api_key}"
 
   try:
     response = requests.get(url, timeout=10)
@@ -185,8 +191,7 @@ if menu == "📊 Dashboard":
 
   if is_online:
     try:
-      obs_list = wu_data["observations"]
-      obs = obs_list[0]  # L'osservazione più recente
+      obs = wu_data["observations"][0]
       metric = obs.get("metric", {})
 
       temp_raw = metric.get("temp")
@@ -220,43 +225,56 @@ if menu == "📊 Dashboard":
       except (ValueError, TypeError):
         pressure_val = "N.D."
 
-      # Calcolo del delta pressione a 3 ore usando lo storico giornaliero dell'API
-      press_trend_str = "N.D."
+      # Salvataggio e lettura persistente della pressione nel DB per calcolare il delta a 3 ore
+      press_trend_str = "In calcolo... ⏳"
       current_pressure = (
           float(pressure_raw) if pressure_raw is not None else None
       )
 
-      if current_pressure is not None and len(obs_list) > 1:
-        current_time = datetime.now()
-        target_time = current_time - timedelta(hours=3)
+      if current_pressure is not None:
+        now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        conn_db = sqlite3.connect(DB_NAME)
+        c_db = conn_db.cursor()
+        try:
+          c_db.execute(
+              "INSERT OR REPLACE INTO pressione_log (Timestamp, Pressione)"
+              " VALUES (?, ?)",
+              (now_str, current_pressure),
+          )
+          # Rimuoviamo i dati più vecchi di 3 ore per alleggerire il database
+          t_lim = (datetime.now() - timedelta(hours=3)).strftime(
+              "%Y-%m-%d %H:%M:%S"
+          )
+          c_db.execute(
+              "DELETE FROM pressione_log WHERE Timestamp < ?", (t_lim,)
+          )
+          conn_db.commit()
+        except Exception:
+          pass
 
-        best_obs = None
-        min_diff = timedelta(hours=99)
+        # Recuperiamo la misura più vecchia salvata nelle ultime 3 ore
+        t_target = (datetime.now() - timedelta(hours=3)).strftime(
+            "%Y-%m-%d %H:%M:%S"
+        )
+        hist_p_df = pd.read_sql(
+            "SELECT * FROM pressione_log WHERE Timestamp >= ? ORDER BY"
+            " Timestamp ASC",
+            conn_db,
+            params=(t_target,),
+        )
+        conn_db.close()
 
-        for o in obs_list:
-          t_str = o.get("obsTimeLocal")
-          try:
-            dt = pd.to_datetime(t_str)
-            diff = abs(dt - target_time)
-            if diff < min_diff:
-              min_diff = diff
-              best_obs = o
-          except:
-            continue
+        if not hist_p_df.empty:
+          old_pressure = hist_p_df.iloc[0]["Pressione"]
+          diff_p = current_pressure - float(old_pressure)
+          if diff_p > 0.1:
+            press_trend_str = f"+{diff_p:.1f} hPa ↗️ vs 3h fa"
+          elif diff_p < -0.1:
+            press_trend_str = f"{diff_p:.1f} hPa ↘️ vs 3h fa"
+          else:
+            press_trend_str = f"{diff_p:+.1f} hPa ➡️ vs 3h fa"
 
-        if best_obs:
-          old_metric = best_obs.get("metric", {})
-          old_pressure = old_metric.get("pressure")
-          if old_pressure is not None:
-            diff_p = current_pressure - float(old_pressure)
-            if diff_p > 0.1:
-              press_trend_str = f"+{diff_p:.1f} hPa ↗️ vs 3h fa"
-            elif diff_p < -0.1:
-              press_trend_str = f"{diff_p:.1f} hPa ↘️ vs 3h fa"
-            else:
-              press_trend_str = f"{diff_p:+.1f} hPa ➡️ vs 3h fa"
-
-      # 5 Colonne pulite con il delta integrato sotto la pressione
+      # 5 Colonne con il delta integrato sotto la pressione
       col_l1, col_l2, col_l3, col_l4, col_l5 = st.columns(5)
       with col_l1:
         st.metric(label="🌡️ Temperatura", value=temp_val)
@@ -1025,7 +1043,7 @@ elif menu == "📊 Grafici Annuali":
         label="📥 Scarica Grafico Annuale Globale (PNG)",
         data=buf_glob,
         file_name="meteo_grafico_annuale_globale.png",
-        mime="image/png",
+        mime="application/octet-stream",
     )
     plt.close(fig_glob)
 
