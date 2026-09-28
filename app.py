@@ -33,52 +33,36 @@ def init_db():
             Pioggia_mm REAL
         )
     """)
-  # Se la tabella esisteva già ma senza la colonna Umidita_Perc, la aggiunge in automatico
   try:
     cursor.execute("ALTER TABLE misurazioni ADD COLUMN Umidita_Perc REAL;")
   except sqlite3.OperationalError:
-    pass  # La colonna esiste già
+    pass
   conn.commit()
   conn.close()
 
 
-# Inizializza subito il DB
 init_db()
 
-# Stile CSS personalizzato per centrare titoli, metriche e tabelle in tutte le pagine
+# Stile CSS personalizzato
 st.markdown(
     """
     <style>
-    /* Centratura di titoli e sottotitoli tranne dove diversamente specificato */
-    h2, h3, h4 {
-        text-align: center;
-    }
-    
-    /* Centratura delle metriche */
-    div[data-testid="stMetric"] {
-        text-align: center;
-        align-items: center;
-    }
+    h2, h3, h4 { text-align: center; }
+    div[data-testid="stMetric"] { text-align: center; align-items: center; }
     div[data-testid="stMetricValue"], div[data-testid="stMetricLabel"], div[data-testid="stMetricDelta"] {
         text-align: center !important;
         justify-content: center !important;
     }
-
-    /* Centratura tabelle e dataframe */
-    div[data-testid="stDataFrame"] {
-        display: flex;
-        justify-content: center;
-    }
+    div[data-testid="stDataFrame"] { display: flex; justify-content: center; }
     </style>
 """,
     unsafe_allow_html=True,
 )
 
-# Configura il refresh automatico ogni 10 minuti (10 min * 60 sec * 1000 ms)
 st_autorefresh(interval=10 * 60 * 1000, key="weather_autorefresh")
 
 
-# Funzione per connettersi e caricare i dati dal database
+# Funzione per connettersi e caricare i dati dal database con standardizzazione delle date
 @st.cache_data(ttl=30)
 def load_data():
   conn = sqlite3.connect(DB_NAME)
@@ -96,6 +80,8 @@ def load_data():
   conn.close()
   if not df.empty:
     df["Data_dt"] = pd.to_datetime(df["Data"], errors="coerce")
+    df["Data"] = df["Data_dt"].dt.strftime("%Y-%m-%d")
+    df = df.dropna(subset=["Data_dt"]).sort_values("Data_dt")
   return df
 
 
@@ -116,7 +102,6 @@ def fetch_wunderground_data(station_id, api_key):
     return None, f"Errore di connessione: {str(e)}"
 
 
-# Intestazione grafica ridotta in altezza tagliando dalla parte superiore
 image_filename = "684225363_1433769152096303_7382692641941825555_n.png"
 if os.path.exists(image_filename):
   try:
@@ -137,7 +122,6 @@ else:
 
 df = load_data()
 
-# Menu laterale con "Dashboard"
 menu = st.sidebar.radio(
     "Menu Principale",
     [
@@ -151,11 +135,9 @@ menu = st.sidebar.radio(
     ],
 )
 
-# Gestione dello stato di autenticazione per le aree protette
 if "auth_ok" not in st.session_state:
   st.session_state["auth_ok"] = False
 
-# Lettura sicura delle credenziali Weather Underground e della password admin dai Secrets
 try:
   wu_station_id = str(st.secrets["wunderground"]["station_id"])
   wu_api_key = str(st.secrets["wunderground"]["api_key"])
@@ -541,12 +523,13 @@ elif menu == "📅 Dati Giornalieri":
       )
 
     st.markdown("---")
-    st.subheader(
-        "📱 Grafico Formato Instagram (4:5) - Temperatura & Pioggia"
-    )
-    st.write(
-        "Confronto tra la temperatura media misurata e la media storica"
-        " insieme al grafico a barre delle precipitazioni giornaliere."
+
+    # Frase descrittiva centrata e in grassetto (senza il sottotitolo precedente)
+    st.markdown(
+        "<p style='text-align: center;'><b>Confronto tra la temperatura"
+        " media misurata e la media storica, insieme all'andamento dell'accumulo"
+        " di pioggia (corrente vs storico).</b></p>",
+        unsafe_allow_html=True,
     )
 
     hist_prev = df[
@@ -556,6 +539,7 @@ elif menu == "📅 Dati Giornalieri":
     if hist_prev.empty:
       hist_prev = hist_mese_data
 
+    # Calcolo temperatura media storica giornaliera
     hist_prev["T_Med_Num"] = pd.to_numeric(
         hist_prev["Temperatura_Media_C"], errors="coerce"
     )
@@ -566,6 +550,34 @@ elif menu == "📅 Dati Giornalieri":
     )
     hist_daily_mean.columns = ["Giorno", "Temp_Media_Storica"]
 
+    # Calcolo accumulo medio storico di pioggia cumulativo
+    hist_prev["Rain_Num"] = pd.to_numeric(
+        hist_prev["Pioggia_mm"], errors="coerce"
+    ).fillna(0)
+    hist_prev["Anno_Storico"] = hist_prev["Data_dt"].dt.year
+    hist_prev["Giorno_Mese"] = hist_prev["Data_dt"].dt.day
+
+    cum_rain_list = []
+    for y, group in hist_prev.groupby("Anno_Storico"):
+      g_sorted = group.sort_values("Giorno_Mese")
+      g_sorted["Cum_Rain"] = g_sorted["Rain_Num"].cumsum()
+      cum_rain_list.append(
+          g_sorted[["Giorno_Mese", "Cum_Rain"]].rename(
+              columns={"Giorno_Mese": "Giorno"}
+          )
+      )
+
+    if cum_rain_list:
+      all_hist_cum = pd.concat(cum_rain_list)
+      hist_cum_mean = (
+          all_hist_cum.groupby("Giorno")["Cum_Rain"].mean().reset_index()
+      )
+      hist_cum_mean.columns = ["Giorno", "Pioggia_Cumulata_Storica"]
+    else:
+      hist_cum_mean = pd.DataFrame(
+          {"Giorno": range(1, 32), "Pioggia_Cumulata_Storica": 0}
+      )
+
     m_data_plot = m_data.copy()
     m_data_plot["Giorno"] = m_data_plot["Data_dt"].dt.day
     m_data_plot["T_Med_Num"] = pd.to_numeric(
@@ -573,16 +585,21 @@ elif menu == "📅 Dati Giornalieri":
     )
     m_data_plot["Rain_Num"] = pd.to_numeric(
         m_data_plot["Pioggia_mm"], errors="coerce"
-    )
+    ).fillna(0)
+    m_data_plot["Pioggia_Cumulata_Corrente"] = m_data_plot["Rain_Num"].cumsum()
 
     m_data_plot = pd.merge(
         m_data_plot, hist_daily_mean, on="Giorno", how="left"
+    )
+    m_data_plot = pd.merge(
+        m_data_plot, hist_cum_mean, on="Giorno", how="left"
     )
 
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True
     )
 
+    # Subplot 1: Temperature
     ax1.plot(
         m_data_plot["Giorno"],
         m_data_plot["T_Med_Num"],
@@ -601,7 +618,7 @@ elif menu == "📅 Dati Giornalieri":
         linestyle="--",
     )
     ax1.set_title(
-        f"Confronto Temperatura Media & Pioggia\n{sel_mese_str} {sel_anno}",
+        f"Confronto Temperatura & Accumulo Pioggia\n{sel_mese_str} {sel_anno}",
         fontsize=11,
         fontweight="bold",
         pad=10,
@@ -610,18 +627,28 @@ elif menu == "📅 Dati Giornalieri":
     ax1.grid(True, linestyle="--", alpha=0.5)
     ax1.legend(loc="upper right", fontsize=7)
 
-    ax2.bar(
+    # Subplot 2: Grafico a linee per l'accumulo pioggia (corrente vs storico)
+    ax2.plot(
         m_data_plot["Giorno"],
-        m_data_plot["Rain_Num"],
-        label="Pioggia (mm)",
+        m_data_plot["Pioggia_Cumulata_Corrente"],
+        label=f"Accumulo {sel_anno} (mm)",
         color="#1c83e1",
-        alpha=0.8,
-        width=0.8,
+        linewidth=1.8,
+        marker="o",
+        markersize=3,
+    )
+    ax2.plot(
+        m_data_plot["Giorno"],
+        m_data_plot["Pioggia_Cumulata_Storica"],
+        label="Accumulo Medio Storico (mm)",
+        color="#d62728",
+        linewidth=1.8,
+        linestyle="--",
     )
     ax2.set_xlabel("Giorno del mese", fontsize=9)
-    ax2.set_ylabel("Pioggia (mm)", fontsize=9)
+    ax2.set_ylabel("Pioggia Cumulata (mm)", fontsize=9)
     ax2.grid(True, linestyle="--", alpha=0.5)
-    ax2.legend(loc="upper right", fontsize=7)
+    ax2.legend(loc="upper left", fontsize=7)
 
     plt.tight_layout()
     st.pyplot(fig)
@@ -1021,6 +1048,7 @@ elif menu == "➕ Inserisci Misura":
         conn.close()
         st.cache_data.clear()
         st.success("Misura registrata con successo nel database!")
+        st.rerun()
       except Exception as e:
         st.error(f"Errore durante il salvataggio: {e}")
 
@@ -1067,6 +1095,7 @@ elif menu == "📁 Importa / Esporta Dati":
       st.success(
           "Database aggiornato con successo tramite il file caricato!"
       )
+      st.rerun()
     except Exception as e:
       st.error(f"Errore nell'importazione: {e}")
 
