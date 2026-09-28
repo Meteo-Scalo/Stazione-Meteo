@@ -493,6 +493,22 @@ elif menu == "📅 Dati Giornalieri":
         else 0.0
     )
 
+    # Calcolo pioggia media storica mensile per il riepilogo
+    hist_rain_df = df[df["Data_dt"].dt.month == sel_mese_num].copy()
+    hist_rain_df["Anno_Val"] = hist_rain_df["Data_dt"].dt.year
+    hist_rain_df["Rain_Num"] = pd.to_numeric(
+        hist_rain_df["Pioggia_mm"], errors="coerce"
+    ).fillna(0)
+    yearly_rain_sums = hist_rain_df.groupby("Anno_Val")["Rain_Num"].sum()
+    hist_rain_mean = (
+        yearly_rain_sums.mean() if not yearly_rain_sums.empty else 0.0
+    )
+    delta_rain = (
+        rain_sum - hist_rain_mean
+        if not pd.isna(rain_sum) and not pd.isna(hist_rain_mean)
+        else 0.0
+    )
+
     c1, c2, c3, c4 = st.columns(4)
     c1.metric(
         "Temp Max Assoluta",
@@ -515,11 +531,16 @@ elif menu == "📅 Dati Giornalieri":
     c4.metric(
         "Pioggia Totale",
         f"{rain_sum:.1f} mm" if not pd.isna(rain_sum) else "0.0 mm",
+        delta=(
+            f"{delta_rain:+.1f} mm vs storica"
+            if not pd.isna(rain_sum) and not pd.isna(hist_rain_mean)
+            else None
+        ),
     )
 
     if not pd.isna(hist_tmed_mean):
       st.markdown(
-          f"<p style='text-align: center; color: gray;'>💡 Media storica di {sel_mese_str} calcolata sul totale degli anni: {hist_tmed_mean:.1f} °C</p>",
+          f"<p style='text-align: center; color: gray;'>💡 Media storica di {sel_mese_str} calcolata sul totale degli anni: {hist_tmed_mean:.1f} °C | Pioggia media storica: {hist_rain_mean:.1f} mm</p>",
           unsafe_allow_html=True,
       )
 
@@ -750,7 +771,6 @@ elif menu == "📈 Dati Mensili":
 
   if not annual_df.empty:
     st.markdown("---")
-    # Frase descrittiva centrata e in grassetto (senza il titolo precedente)
     st.markdown(
         "<p style='text-align: center;'><b>Confronto tra la temperatura"
         " media mensile misurata nell'anno selezionato e la media storica,"
@@ -811,7 +831,6 @@ elif menu == "📈 Dati Mensili":
       )
       hist_monthly_mean.columns = ["Data_dt", "Temp_Media_Storica"]
 
-      # Calcolo pioggia media storica mensile
       hist_prev_annuale_rain = hist_prev_annuale.copy()
       hist_prev_annuale_rain["Rain_Num"] = pd.to_numeric(
           hist_prev_annuale_rain["Pioggia_mm"], errors="coerce"
