@@ -2,6 +2,7 @@ from datetime import datetime
 import io
 import os
 import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
 import numpy as np
 from PIL import Image
 import pandas as pd
@@ -657,6 +658,9 @@ elif menu == "📅 Dati Giornalieri":
     ax2.set_ylabel("Pioggia Cumulata (mm)", fontsize=9)
     ax2.grid(True, linestyle="--", alpha=0.5)
     ax2.legend(loc="upper left", fontsize=7)
+
+    # Forza l'asse X a mostrare solo numeri interi (giorni)
+    ax2.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
 
     plt.tight_layout()
     st.pyplot(fig)
