@@ -562,33 +562,6 @@ elif menu == "📅 Dati Giornalieri":
     )
     hist_daily_mean.columns = ["Giorno", "Temp_Media_Storica"]
 
-    hist_prev["Rain_Num"] = pd.to_numeric(
-        hist_prev["Pioggia_mm"], errors="coerce"
-    ).fillna(0)
-    hist_prev["Anno_Storico"] = hist_prev["Data_dt"].dt.year
-    hist_prev["Giorno_Mese"] = hist_prev["Data_dt"].dt.day
-
-    cum_rain_list = []
-    for y, group in hist_prev.groupby("Anno_Storico"):
-      g_sorted = group.sort_values("Giorno_Mese")
-      g_sorted["Cum_Rain"] = g_sorted["Rain_Num"].cumsum()
-      cum_rain_list.append(
-          g_sorted[["Giorno_Mese", "Cum_Rain"]].rename(
-              columns={"Giorno_Mese": "Giorno"}
-          )
-      )
-
-    if cum_rain_list:
-      all_hist_cum = pd.concat(cum_rain_list)
-      hist_cum_mean = (
-          all_hist_cum.groupby("Giorno")["Cum_Rain"].mean().reset_index()
-      )
-      hist_cum_mean.columns = ["Giorno", "Pioggia_Cumulata_Storica"]
-    else:
-      hist_cum_mean = pd.DataFrame(
-          {"Giorno": range(1, 32), "Pioggia_Cumulata_Storica": 0}
-      )
-
     m_data_plot = m_data.copy()
     m_data_plot["Giorno"] = m_data_plot["Data_dt"].dt.day
     m_data_plot["T_Med_Num"] = pd.to_numeric(
@@ -598,12 +571,11 @@ elif menu == "📅 Dati Giornalieri":
         m_data_plot["Pioggia_mm"], errors="coerce"
     ).fillna(0)
     m_data_plot["Pioggia_Cumulata_Corrente"] = m_data_plot["Rain_Num"].cumsum()
+    # Linea retta costante pari alla media storica totale della pioggia per il mese selezionato
+    m_data_plot["Pioggia_Cumulata_Storica"] = hist_rain_mean
 
     m_data_plot = pd.merge(
         m_data_plot, hist_daily_mean, on="Giorno", how="left"
-    )
-    m_data_plot = pd.merge(
-        m_data_plot, hist_cum_mean, on="Giorno", how="left"
     )
 
     fig, (ax1, ax2) = plt.subplots(
@@ -649,7 +621,7 @@ elif menu == "📅 Dati Giornalieri":
     ax2.plot(
         m_data_plot["Giorno"],
         m_data_plot["Pioggia_Cumulata_Storica"],
-        label="Accumulo Medio Storico (mm)",
+        label="Pioggia Media Storica (mm)",
         color="#d62728",
         linewidth=1.8,
         linestyle="--",
