@@ -578,11 +578,11 @@ elif menu == "📅 Dati Giornalieri":
     )
 
     # AX1: Temperatura
-    # 1. Linea azzurra con le misure della stazione
+    # 1. Linea azzurra con le misure della stazione (con valore medio misurato nella legenda)
     ax1.plot(
         m_data_plot["Giorno"],
         m_data_plot["T_Med_Num"],
-        label=f"Misurata {sel_anno} (°C)",
+        label=f"Misurata {sel_anno} (Media: {tmed_mean:.1f} °C)" if not pd.isna(tmed_mean) else f"Misurata {sel_anno}",
         color="#00bcd4",
         linewidth=1.8,
         marker="o",
@@ -594,7 +594,7 @@ elif menu == "📅 Dati Giornalieri":
         color="#d32f2f",
         linestyle="--",
         linewidth=1.8,
-        label=f"Media Stazione (DB): {hist_tmed_mean:.1f} °C",
+        label=f"Media Stazione : {hist_tmed_mean:.1f} °C",
     )
     # 3. Linea orizzontale verde con la temperatura media 1991-2000
     ax1.axhline(
@@ -616,11 +616,11 @@ elif menu == "📅 Dati Giornalieri":
     ax1.legend(loc="upper right", fontsize=7)
 
     # AX2: Pioggia
-    # 1. Linea blu per la misura di stazione
+    # 1. Linea blu per la misura di stazione (con valore totale misurato nella legenda)
     ax2.plot(
         m_data_plot["Giorno"],
         m_data_plot["Pioggia_Cumulata_Corrente"],
-        label=f"Accumulo {sel_anno} (mm)",
+        label=f"Accumulo {sel_anno} (Totale: {rain_sum:.1f} mm)",
         color="#1e88e5",
         linewidth=1.8,
         marker="o",
@@ -632,7 +632,7 @@ elif menu == "📅 Dati Giornalieri":
         color="#d32f2f",
         linestyle="--",
         linewidth=1.8,
-        label=f"Media Stazione (DB): {hist_rain_mean:.1f} mm",
+        label=f"Media Stazione : {hist_rain_mean:.1f} mm",
     )
     # 3. Linea orizzontale verde con la media 1991-2000
     ax2.axhline(
@@ -882,8 +882,7 @@ elif menu == "📈 Dati Mensili":
           linestyle="--",
       )
       ax1_ann.set_title(
-          f"Confronto Temperatura Media Mensile & Pioggia\nAnno"
-          f" {sel_anno_grafico}",
+          f"Confronto Temperatura Media Mensile & Pioggia\nAnno {sel_anno_grafico}",
           fontsize=11,
           fontweight="bold",
           pad=10,
