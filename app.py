@@ -221,7 +221,12 @@ if menu == "📊 Dashboard":
   if is_online:
     try:
       obs = wu_data["observations"][0]
-      metric = obs.get("metric", {})
+# --- CODICE TEMPORANEO PER VISUALIZZARE IL JSON ---
+      st.write("🔍 Debug - JSON grezzo da Weather Underground:")
+      st.json(wu_data)
+      # --------------------------------------------------
+        
+        metric = obs.get("metric", {})
 
       temp_raw = metric.get("temp")
       heat_raw = metric.get("heatIndex")
