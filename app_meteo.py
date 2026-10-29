@@ -1,12 +1,21 @@
-import tkinter as tk
-from tkinter import ttk, filedialog, messagebox, Toplevel
-import pandas as pd
-import sqlite3
 from datetime import datetime
+import io
+import os
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+import matplotlib.ticker as ticker
+import numpy as np
+from PIL import Image
+import pandas as pd
+import requests
+import sqlite3
+import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
+# Nome del database SQLite condiviso
 DB_NAME = "meteo_database.db"
+
+# URL del file Excel raw su GitHub
+URL_GITHUB_FILE = "https://raw.githubusercontent.com/Meteo-Scalo/Stazione-Meteo/main/dati_meteo_esempio.xlsx"
 
 # Tabella climatica di riferimento 1991-2000
 CLIMA_1991_2000 = {
@@ -24,847 +33,1036 @@ CLIMA_1991_2000 = {
     12: {"Temp_Media": 7.2, "Pioggia": 94}
 }
 
-class MeteoApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("Gestore Statistiche Meteo con Database")
-        self.root.geometry("1050x880")
-        self.root.minsize(950, 720)
-        
-        self.df = None
-        
-        # Inizializza il database SQLite
-        self.init_database()
-        
-        # Titolo principale
-        self.title_label = tk.Label(root, text="Stazione Meteo Amatoriale Monterotondo Scalo", font=("Arial", 16, "bold"))
-        self.title_label.pack(pady=10)
-        
-        # Barra dei comandi superiore
-        self.btn_frame = tk.Frame(root)
-        self.btn_frame.pack(pady=5)
-        
-        self.btn_load = tk.Button(self.btn_frame, text="📁 Importa Excel/CSV", command=self.load_file, bg="#2e7d32", fg="white", font=("Arial", 10, "bold"), padx=6, pady=5)
-        self.btn_load.grid(row=0, column=0, padx=4)
-        
-        self.btn_manual = tk.Button(self.btn_frame, text="➕ Inserisci Misura", command=self.open_manual_entry, bg="#1565c0", fg="white", font=("Arial", 10, "bold"), padx=6, pady=5)
-        self.btn_manual.grid(row=0, column=1, padx=4)
+st.set_page_config(
+    page_title="Stazione meteo amatoriale di Monterotondo Scalo",
+    layout="wide",
+    page_icon="🌦️",
+)
 
-        self.btn_daily_comp = tk.Button(self.btn_frame, text="📈 Confronto Giornaliero", command=self.open_daily_comparison_dialog, bg="#00838f", fg="white", font=("Arial", 10, "bold"), padx=6, pady=5)
-        self.btn_daily_comp.grid(row=0, column=2, padx=4)
 
-        self.btn_history = tk.Button(self.btn_frame, text="📊 Storico Mese", command=self.show_monthly_history, bg="#4527a0", fg="white", font=("Arial", 10, "bold"), padx=6, pady=5)
-        self.btn_history.grid(row=0, column=3, padx=4)
-
-        self.btn_year_history = tk.Button(self.btn_frame, text="📊 Storico Anno", command=self.show_yearly_history, bg="#6a1b9a", fg="white", font=("Arial", 10, "bold"), padx=6, pady=5)
-        self.btn_year_history.grid(row=0, column=4, padx=4)
-        
-        # --- SEZIONE VISUALIZZAZIONE DATI E FILTRI ---
-        self.view_frame = tk.LabelFrame(root, text=" Visualizzazione Dati e Filtri ", font=("Arial", 11, "bold"), padx=10, pady=8)
-        self.view_frame.pack(fill="x", padx=20, pady=8)
-        
-        mode_frame = tk.Frame(self.view_frame)
-        mode_frame.pack(fill="x", pady=2)
-        
-        tk.Label(mode_frame, text="Modalità Visualizzazione:", font=("Arial", 9, "bold")).grid(row=0, column=0, padx=4, sticky="w")
-        self.view_mode_var = tk.StringVar(root)
-        self.view_mode_var.set("Record Mensili e Assoluti")
-        modes = [
-            "Record Mensili e Assoluti", 
-            "Consultazione Database", 
-            "Dati Giornalieri", 
-            "Dati Mensili"
-        ]
-        self.view_mode_menu = tk.OptionMenu(mode_frame, self.view_mode_var, *modes, command=self.on_view_mode_changed)
-        self.view_mode_menu.config(font=("Arial", 9), width=32)
-        self.view_mode_menu.grid(row=0, column=1, padx=4)
-        
-        # Frame dinamico per i parametri aggiuntivi della modalità scelta
-        self.params_frame = tk.Frame(self.view_frame)
-        self.params_frame.pack(fill="x", pady=5)
-
-        # Sezione Tabella Principale / Container Dati
-        self.table_frame = tk.LabelFrame(root, text=" Tabella Dati ", font=("Arial", 11, "bold"), padx=10, pady=10)
-        self.table_frame.pack(fill="both", expand=True, padx=20, pady=10)
-        
-        # Configurazione Stile Moderno per Treeview
-        style = ttk.Style()
-        style.theme_use('clam')
-        style.configure("Treeview.Heading", background="#1565c0", foreground="white", font=("Arial", 10, "bold"), relief="flat")
-        style.map("Treeview.Heading", background=[('active', '#0d47a1')])
-        style.configure("Treeview", rowheight=26, font=("Arial", 9), fieldbackground="white", background="white")
-        style.map("Treeview", background=[('selected', '#bbdefb')], foreground=[('selected', 'black')])
-
-        # Crea la Treeview iniziale di default
-        self.setup_default_treeview()
-        
-        # Carica i dati dal DB all'avvio
-        self.load_from_db()
-
-    def setup_default_treeview(self):
-        """Pulisce il container e imposta una Treeview standard"""
-        for w in self.table_frame.winfo_children():
-            w.destroy()
-            
-        self.tree = ttk.Treeview(self.table_frame, show="headings", height=12)
-        scrollbar = ttk.Scrollbar(self.table_frame, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
-        
-        self.tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-
-    def init_database(self):
-        """Crea la tabella nel database se non esiste già"""
-        conn = sqlite3.connect(DB_NAME)
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS misurazioni (
-                Data TEXT PRIMARY KEY,
-                Temperatura_Min_C REAL,
-                Temperatura_Max_C REAL,
-                Temperatura_Media_C REAL,
-                Umidita_Perc REAL,
-                Pioggia_mm REAL
-            )
-        ''')
-        conn.commit()
-        conn.close()
-
-    def load_from_db(self):
-        """Carica tutti i dati dal database nel DataFrame dell'applicazione"""
-        try:
-            conn = sqlite3.connect(DB_NAME)
-            self.df = pd.read_sql("SELECT * FROM misurazioni ORDER BY Data ASC", conn)
-            conn.close()
-            
-            if not self.df.empty:
-                self.df['Data_dt'] = pd.to_datetime(self.df['Data'], errors='coerce')
-                self.update_view()
-            else:
-                if hasattr(self, 'tree') and self.tree.winfo_exists():
-                    for row in self.tree.get_children():
-                        self.tree.delete(row)
-        except Exception as e:
-            messagebox.showerror("Errore DB", f"Impossibile leggere dal database:\n{str(e)}")
-
-    def load_file(self):
-        """Importa un file Excel o CSV e lo unisce/salva nel database"""
-        file_path = filedialog.askopenfilename(
-            title="Seleziona file dati meteo",
-            filetypes=[("File Excel", "*.xlsx;*.xls"), ("File CSV", "*.csv"), ("Tutti i file", "*.*")]
+# Funzione per inizializzare il database
+def init_db():
+  conn = sqlite3.connect(DB_NAME)
+  cursor = conn.cursor()
+  cursor.execute("""
+        CREATE TABLE IF NOT EXISTS misurazioni (
+            Data TEXT PRIMARY KEY,
+            Temperatura_Min_C REAL,
+            Temperatura_Max_C REAL,
+            Temperatura_Media_C REAL,
+            Umidita_Perc REAL,
+            Pioggia_mm REAL
         )
-        if not file_path:
-            return
-        
-        try:
-            if file_path.endswith(('.xlsx', '.xls')):
-                df_temp = pd.read_excel(file_path)
-            else:
-                df_temp = pd.read_csv(file_path, sep=None, engine='python')
-            
-            required_cols = ['Data', 'Temperatura_Min_C', 'Temperatura_Max_C', 'Temperatura_Media_C', 'Umidita_%', 'Pioggia_mm']
-            for col in required_cols:
-                if col not in df_temp.columns:
-                    raise ValueError(f"Colonna mancante nel file: '{col}'")
-            
-            df_temp['Data'] = pd.to_datetime(df_temp['Data'], errors='coerce').dt.strftime('%Y-%m-%d')
-            numeric_cols = ['Temperatura_Min_C', 'Temperatura_Max_C', 'Temperatura_Media_C', 'Umidita_%', 'Pioggia_mm']
-            
-            for col in numeric_cols:
-                if df_temp[col].dtype == object or str(df_temp[col].dtype).startswith('str'):
-                    df_temp[col] = df_temp[col].astype(str).str.replace(',', '.', regex=False)
-                df_temp[col] = pd.to_numeric(df_temp[col], errors='coerce')
-            
-            df_temp = df_temp.rename(columns={'Umidita_%': 'Umidita_Perc'})
-            
-            conn = sqlite3.connect(DB_NAME)
-            df_temp.to_sql('misurazioni', conn, if_exists='replace', index=False)
-            conn.close()
-            
-            self.load_from_db()
-            messagebox.showinfo("Successo", "File importato e salvato nel database con successo!")
-            
-        except Exception as e:
-            messagebox.showerror("Errore", f"Impossibile elaborare il file:\n{str(e)}")
+    """)
+  try:
+    cursor.execute("ALTER TABLE misurazioni ADD COLUMN Umidita_Perc REAL;")
+  except sqlite3.OperationalError:
+    pass
+  conn.commit()
+  conn.close()
 
-    def update_view(self):
-        if self.df is None or self.df.empty:
-            return
-        mode = self.view_mode_var.get()
-        if mode == "Record Mensili e Assoluti":
-            self.setup_default_treeview()
-            self.populate_monthly_table()
-        elif mode == "Consultazione Database":
-            self.setup_default_treeview()
-            self.filter_daily_range()
-        elif mode == "Dati Giornalieri":
-            self.filter_monthly_extremes()
-        elif mode == "Dati Mensili":
-            self.setup_default_treeview()
-            self.filter_yearly_extremes()
 
-    def on_view_mode_changed(self, mode):
-        """Gestisce il cambio di modalità di visualizzazione aggiornando i controlli e la tabella"""
-        for widget in self.params_frame.winfo_children():
-            widget.destroy()
-            
-        if mode == "Record Mensili e Assoluti":
-            self.setup_default_treeview()
-            self.populate_monthly_table()
-            
-        elif mode == "Consultazione Database":
-            self.setup_default_treeview()
-            tk.Label(self.params_frame, text="Da (YYYY-MM-DD):", font=("Arial", 9)).grid(row=0, column=0, padx=2)
-            self.entry_start_date = tk.Entry(self.params_frame, font=("Arial", 9), width=12)
-            self.entry_start_date.grid(row=0, column=1, padx=2)
-            if self.df is not None and not self.df.empty:
-                self.entry_start_date.insert(0, self.df['Data'].min())
-            
-            tk.Label(self.params_frame, text="A (YYYY-MM-DD):", font=("Arial", 9)).grid(row=0, column=2, padx=2)
-            self.entry_end_date = tk.Entry(self.params_frame, font=("Arial", 9), width=12)
-            self.entry_end_date.grid(row=0, column=3, padx=2)
-            if self.df is not None and not self.df.empty:
-                self.entry_end_date.insert(0, self.df['Data'].max())
-                
-            btn_filter = tk.Button(self.params_frame, text="🔍 Visualizza Dettaglio", command=self.filter_daily_range, bg="#00695c", fg="white", font=("Arial", 9, "bold"), padx=6, pady=2)
-            btn_filter.grid(row=0, column=4, padx=10)
-            self.filter_daily_range()
-            
-        elif mode == "Dati Giornalieri":
-            tk.Label(self.params_frame, text="Anno:", font=("Arial", 9)).grid(row=0, column=0, padx=2)
-            self.param_anno_var = tk.StringVar(self.params_frame)
-            anni = sorted(self.df['Data_dt'].dt.year.dropna().unique().astype(int).tolist()) if self.df is not None and not self.df.empty else [datetime.now().year]
-            self.param_anno_var.set(str(anni[-1]))
-            menu_a = tk.OptionMenu(self.params_frame, self.param_anno_var, *[str(a) for a in anni])
-            menu_a.config(font=("Arial", 9), width=8)
-            menu_a.grid(row=0, column=1, padx=2)
-            
-            tk.Label(self.params_frame, text="Mese:", font=("Arial", 9)).grid(row=0, column=2, padx=2)
-            self.param_mese_var = tk.StringVar(self.params_frame)
-            self.param_mese_var.set("Gennaio")
-            mesi_nomi_list = ["Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno", "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"]
-            menu_m = tk.OptionMenu(self.params_frame, self.param_mese_var, *mesi_nomi_list)
-            menu_m.config(font=("Arial", 9), width=11)
-            menu_m.grid(row=0, column=3, padx=2)
-            
-            btn_filter = tk.Button(self.params_frame, text="🔍 Visualizza Dettaglio & Estremi", command=self.filter_monthly_extremes, bg="#00695c", fg="white", font=("Arial", 9, "bold"), padx=6, pady=2)
-            btn_filter.grid(row=0, column=4, padx=6)
+init_db()
 
-            btn_pdf = tk.Button(self.params_frame, text="📄 Esporta PDF", command=self.export_monthly_pdf_action, bg="#c62828", fg="white", font=("Arial", 9, "bold"), padx=6, pady=2)
-            btn_pdf.grid(row=0, column=5, padx=6)
 
-            self.filter_monthly_extremes()
-            
-        elif mode == "Dati Mensili":
-            self.setup_default_treeview()
-            tk.Label(self.params_frame, text="Anno:", font=("Arial", 9)).grid(row=0, column=0, padx=2)
-            self.param_anno_y_var = tk.StringVar(self.params_frame)
-            anni = sorted(self.df['Data_dt'].dt.year.dropna().unique().astype(int).tolist()) if self.df is not None and not self.df.empty else [datetime.now().year]
-            self.param_anno_y_var.set("Tutti")
-            menu_ay = tk.OptionMenu(self.params_frame, self.param_anno_y_var, "Tutti", *[str(a) for a in anni])
-            menu_ay.config(font=("Arial", 9), width=10)
-            menu_ay.grid(row=0, column=1, padx=2)
-            
-            btn_filter = tk.Button(self.params_frame, text="🔍 Visualizza Estremi Annuali", command=self.filter_yearly_extremes, bg="#00695c", fg="white", font=("Arial", 9, "bold"), padx=6, pady=2)
-            btn_filter.grid(row=0, column=2, padx=6)
+# Funzione per sincronizzare automaticamente i dati dal file Excel di GitHub all'avvio
+def sync_from_github():
+  try:
+    df_github = pd.read_excel(URL_GITHUB_FILE)
+    conn = sqlite3.connect(DB_NAME)
+    df_github.to_sql("misurazioni", conn, if_exists="replace", index=False)
+    conn.close()
+  except Exception:
+    pass
 
-            btn_pdf = tk.Button(self.params_frame, text="📄 Esporta PDF", command=self.export_yearly_pdf_action, bg="#c62828", fg="white", font=("Arial", 9, "bold"), padx=6, pady=2)
-            btn_pdf.grid(row=0, column=3, padx=6)
 
-            self.filter_yearly_extremes()
+sync_from_github()
 
-    def populate_monthly_table(self):
-        """Popola la tabella principale con i record mensili e la riga dei record assoluti"""
-        columns = ("Mese", "1° Max (°C)", "Data 1° Max", "2° Max (°C)", "Data 2° Max", "1° Min (°C)", "Data 1° Min", "2° Min (°C)", "Data 2° Min")
-        self.tree.config(columns=columns, show="headings")
-        
-        col_widths = [120, 95, 105, 95, 105, 95, 105, 95, 105]
-        for col, width in zip(columns, col_widths):
-            self.tree.heading(col, text=col)
-            self.tree.column(col, width=width, anchor="center")
-            
-        self.tree.tag_configure("assoluti", background="#fff9c4", font=("Arial", 9, "bold"))
-        
-        for row in self.tree.get_children():
-            self.tree.delete(row)
-            
-        temp_df = self.df.copy()
-        temp_df['Mese_Num'] = temp_df['Data_dt'].dt.month
-        
-        mesi_nomi = {
-            1: "Gennaio", 2: "Febbraio", 3: "Marzo", 4: "Aprile",
-            5: "Maggio", 6: "Giugno", 7: "Luglio", 8: "Agosto",
-            9: "Settembre", 10: "Ottobre", 11: "Novembre", 12: "Dicembre"
-        }
-        
-        for m_num in range(1, 13):
-            m_data = temp_df[temp_df['Mese_Num'] == m_num]
-            if m_data.empty:
-                continue
-            
-            top_max = m_data.sort_values(by='Temperatura_Max_C', ascending=False).head(2)
-            top_min = m_data.sort_values(by='Temperatura_Min_C', ascending=True).head(2)
-            
-            max_vals = top_max['Temperatura_Max_C'].tolist()
-            max_dates = top_max['Data'].tolist()
-            min_vals = top_min['Temperatura_Min_C'].tolist()
-            min_dates = top_min['Data'].tolist()
-            
-            m1_t = f"{max_vals[0]:.1f}" if len(max_vals) > 0 else "-"
-            m1_d = f"{max_dates[0]}" if len(max_dates) > 0 else "-"
-            m2_t = f"{max_vals[1]:.1f}" if len(max_vals) > 1 else "-"
-            m2_d = f"{max_dates[1]}" if len(max_dates) > 1 else "-"
-            
-            min1_t = f"{min_vals[0]:.1f}" if len(min_vals) > 0 else "-"
-            min1_d = f"{min_dates[0]}" if len(min_dates) > 0 else "-"
-            min2_t = f"{min_vals[1]:.1f}" if len(min_vals) > 1 else "-"
-            min2_d = f"{min_dates[1]}" if len(min_dates) > 1 else "-"
-            
-            row_values = (mesi_nomi[m_num], m1_t, m1_d, m2_t, m2_d, min1_t, min1_d, min2_t, min2_d)
-            self.tree.insert("", "end", values=row_values)
-            
-        if not temp_df.empty:
-            abs_max_row = temp_df.loc[temp_df['Temperatura_Max_C'].idxmax()]
-            abs_min_row = temp_df.loc[temp_df['Temperatura_Min_C'].idxmin()]
-            
-            abs_row_values = (
-                "⭐ RECORD ASSOLUTI",
-                f"{abs_max_row['Temperatura_Max_C']:.1f}", abs_max_row['Data'],
-                "-", "-",
-                f"{abs_min_row['Temperatura_Min_C']:.1f}", abs_min_row['Data'],
-                "-", "-"
-            )
-            self.tree.insert("", "end", values=abs_row_values, tags=("assoluti",))
+# Stile CSS personalizzato
+st.markdown(
+    """
+    <style>
+    h2, h3, h4 { text-align: center; }
+    div[data-testid="stMetric"] { text-align: center; align-items: center; }
+    div[data-testid="stMetricValue"], div[data-testid="stMetricLabel"], div[data-testid="stMetricDelta"] {
+        text-align: center !important;
+        justify-content: center !important;
+    }
+    div[data-testid="stDataFrame"] { display: flex; justify-content: center; }
+    </style>
+""",
+    unsafe_allow_html=True,
+)
 
-    def filter_daily_range(self):
-        """Filtra e visualizza i dati giorno per giorno in base al range temporale selezionato"""
-        if self.df is None or self.df.empty:
-            return
-        start_str = self.entry_start_date.get().strip()
-        end_str = self.entry_end_date.get().strip()
-        
-        try:
-            start_dt = pd.to_datetime(start_str)
-            end_dt = pd.to_datetime(end_str)
-        except Exception as ex:
-            messagebox.showerror("Errore", f"Formato data non valido (usa YYYY-MM-DD):\n{str(ex)}")
-            return
-            
-        filtered = self.df[(self.df['Data_dt'] >= start_dt) & (self.df['Data_dt'] <= end_dt)].sort_values('Data_dt')
-        
-        columns = ("Data", "Temp Min (°C)", "Temp Max (°C)", "Temp Media (°C)", "Umidità (%)", "Pioggia (mm)")
-        col_widths = [140, 120, 120, 120, 120, 120]
-        
-        self.tree.config(columns=columns, show="headings")
-        for col, width in zip(columns, col_widths):
-            self.tree.heading(col, text=col)
-            self.tree.column(col, width=width, anchor="center")
-            
-        for row in self.tree.get_children():
-            self.tree.delete(row)
-            
-        for _, row in filtered.iterrows():
-            self.tree.insert("", "end", values=(
-                row['Data'],
-                f"{row['Temperatura_Min_C']:.1f}",
-                f"{row['Temperatura_Max_C']:.1f}",
-                f"{row['Temperatura_Media_C']:.1f}",
-                f"{row['Umidita_Perc']:.0f}",
-                f"{row['Pioggia_mm']:.1f}"
-            ))
+st_autorefresh(interval=10 * 60 * 1000, key="weather_autorefresh")
 
-    def filter_monthly_extremes(self):
-        """Visualizza in alto il pannello card degli estremi/riepilogo e sotto la tabella con le misure giornaliere del mese"""
-        if self.df is None or self.df.empty:
-            return
-        try:
-            anno = int(self.param_anno_var.get())
-        except ValueError:
-            return
-        mese_str = self.param_mese_var.get()
-        mesi_dict = {"Gennaio": 1, "Febbraio": 2, "Marzo": 3, "Aprile": 4, "Maggio": 5, "Giugno": 6, "Luglio": 7, "Agosto": 8, "Settembre": 9, "Ottobre": 10, "Novembre": 11, "Dicembre": 12}
-        m = mesi_dict[mese_str]
-        
-        t_df = self.df.copy()
-        t_df['Anno'] = t_df['Data_dt'].dt.year
-        t_df['Mese'] = t_df['Data_dt'].dt.month
-        
-        month_data = t_df[(t_df['Anno'] == anno) & (t_df['Mese'] == m)].sort_values('Data_dt')
-        
-        for w in self.table_frame.winfo_children():
-            w.destroy()
-            
-        if month_data.empty:
-            tk.Label(self.table_frame, text=f"Nessun dato trovato per {mese_str} {anno}.", font=("Arial", 11), fg="red").pack(pady=20)
-            return
-            
-        min_row = month_data.loc[month_data['Temperatura_Min_C'].idxmin()]
-        max_row = month_data.loc[month_data['Temperatura_Max_C'].idxmax()]
-        mean_temp = month_data['Temperatura_Media_C'].mean()
-        mean_hum = month_data['Umidita_Perc'].mean()
-        tot_rain = month_data['Pioggia_mm'].sum()
-        
-        # Riferimento Tabella 1991-2000
-        hist_tmed = CLIMA_1991_2000[m]["Temp_Media"]
-        hist_rain = CLIMA_1991_2000[m]["Pioggia"]
-        delta_t = mean_temp - hist_tmed
-        delta_rain = tot_rain - hist_rain
-        
-        card_frame = tk.LabelFrame(self.table_frame, text=f" Riepilogo ed Estremi: {mese_str} {anno} (vs Storico 1991-2000) ", font=("Arial", 10, "bold"), bg="#fffde7", fg="#f57f17", padx=10, pady=8)
-        card_frame.pack(fill="x", padx=5, pady=5)
-        
-        lbl_min = tk.Label(card_frame, text=f"❄️ T. Minima Assoluta: {min_row['Temperatura_Min_C']:.1f} °C (Data: {min_row['Data']})", font=("Arial", 9, "bold"), bg="#fffde7", anchor="w")
-        lbl_min.grid(row=0, column=0, sticky="w", padx=10, pady=2)
-        
-        lbl_max = tk.Label(card_frame, text=f"🔥 T. Massima Assoluta: {max_row['Temperatura_Max_C']:.1f} °C (Data: {max_row['Data']})", font=("Arial", 9, "bold"), bg="#fffde7", anchor="w")
-        lbl_max.grid(row=0, column=1, sticky="w", padx=10, pady=2)
-        
-        lbl_avg = tk.Label(card_frame, text=f"📊 Temp. Media Mese: {mean_temp:.1f} °C ({delta_t:+.1f} °C vs storico 1991-2000)  |  Umidità Media: {mean_hum:.0f}%", font=("Arial", 9, "bold"), bg="#fffde7", anchor="w")
-        lbl_avg.grid(row=1, column=0, sticky="w", padx=10, pady=2)
-        
-        lbl_rain = tk.Label(card_frame, text=f"🌧️ Pioggia Totale Mese: {tot_rain:.1f} mm ({delta_rain:+.1f} mm vs storico 1991-2000)", font=("Arial", 9, "bold"), bg="#fffde7", anchor="w")
-        lbl_rain.grid(row=1, column=1, sticky="w", padx=10, pady=2)
-        
-        bottom_container = tk.Frame(self.table_frame)
-        bottom_container.pack(fill="both", expand=True, pady=5)
-        
-        columns = ("Data", "Temp Min (°C)", "Temp Max (°C)", "Temp Media (°C)", "Umidità (%)", "Pioggia (mm)")
-        col_widths = [150, 120, 120, 120, 120, 130]
-        
-        self.tree = ttk.Treeview(bottom_container, columns=columns, show="headings", height=9)
-        scrollbar = ttk.Scrollbar(bottom_container, orient="vertical", command=self.tree.yview)
-        self.tree.configure(yscrollcommand=scrollbar.set)
-        
-        for col, width in zip(columns, col_widths):
-            self.tree.heading(col, text=col)
-            self.tree.column(col, width=width, anchor="center")
-            
-        self.tree.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        for _, row in month_data.iterrows():
-            self.tree.insert("", "end", values=(
-                row['Data'],
-                f"{row['Temperatura_Min_C']:.1f}",
-                f"{row['Temperatura_Max_C']:.1f}",
-                f"{row['Temperatura_Media_C']:.1f}",
-                f"{row['Umidita_Perc']:.0f}",
-                f"{row['Pioggia_mm']:.1f}"
-            ))
 
-    def filter_yearly_extremes(self):
-        """Visualizza gli estremi annuali con grafica ottimizzata"""
-        if self.df is None or self.df.empty:
-            return
-        sel_anno = self.param_anno_y_var.get()
-        
-        t_df = self.df.copy()
-        t_df['Anno'] = t_df['Data_dt'].dt.year
-        
-        if sel_anno != "Tutti":
-            try:
-                anni = [int(sel_anno)]
-            except ValueError:
-                anni = sorted(t_df['Anno'].dropna().unique().astype(int).tolist())
-        else:
-            anni = sorted(t_df['Anno'].dropna().unique().astype(int).tolist())
-            
-        columns = ("Anno", "Temp Min (°C)", "Data Min", "Temp Max (°C)", "Data Max", "Temp Media (°C)", "Pioggia Totale (mm)")
-        col_widths = [100, 115, 115, 115, 115, 115, 140]
-        
-        self.tree.config(columns=columns, show="headings")
-        for col, width in zip(columns, col_widths):
-            self.tree.heading(col, text=col)
-            self.tree.column(col, width=width, anchor="center")
-            
-        for row in self.tree.get_children():
-            self.tree.delete(row)
-            
-        for a in anni:
-            y_data = t_df[t_df['Anno'] == a]
-            if y_data.empty:
-                continue
-            min_row = y_data.loc[y_data['Temperatura_Min_C'].idxmin()]
-            max_row = y_data.loc[y_data['Temperatura_Max_C'].idxmax()]
-            mean_temp = y_data['Temperatura_Media_C'].mean()
-            tot_rain = y_data['Pioggia_mm'].sum()
-            
-            self.tree.insert("", "end", values=(
-                str(a),
-                f"{min_row['Temperatura_Min_C']:.1f}",
-                min_row['Data'],
-                f"{max_row['Temperatura_Max_C']:.1f}",
-                max_row['Data'],
-                f"{mean_temp:.1f}",
-                f"{tot_rain:.1f}"
-            ))
+# Funzione per connettersi e caricare i dati dal database
+@st.cache_data(ttl=30)
+def load_data():
+  conn = sqlite3.connect(DB_NAME)
+  try:
+    df = pd.read_sql("SELECT * FROM misurazioni ORDER BY Data ASC", conn)
+  except Exception:
+    df = pd.DataFrame(columns=[
+        "Data",
+        "Temperatura_Min_C",
+        "Temperatura_Max_C",
+        "Temperatura_Media_C",
+        "Umidita_Perc",
+        "Pioggia_mm",
+    ])
+  conn.close()
+  if not df.empty and "Data" in df.columns:
+    df["Data_dt"] = pd.to_datetime(df["Data"], errors="coerce")
+    df["Data"] = df["Data_dt"].dt.strftime("%Y-%m-%d")
+    df = df.dropna(subset=["Data_dt"]).sort_values("Data_dt")
+  else:
+    df["Data_dt"] = pd.to_datetime([], errors="coerce")
+  return df
 
-    def export_monthly_pdf_action(self):
-        """Esporta il report mensile corrente in formato PDF"""
-        try:
-            from reportlab.lib.pagesizes import A4
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib import colors
-            
-            anno = int(self.param_anno_var.get())
-            mese_str = self.param_mese_var.get()
-            mesi_dict = {"Gennaio": 1, "Febbraio": 2, "Marzo": 3, "Aprile": 4, "Maggio": 5, "Giugno": 6, "Luglio": 7, "Agosto": 8, "Settembre": 9, "Ottobre": 10, "Novembre": 11, "Dicembre": 12}
-            m = mesi_dict[mese_str]
-            
-            t_df = self.df.copy()
-            t_df['Anno'] = t_df['Data_dt'].dt.year
-            t_df['Mese'] = t_df['Data_dt'].dt.month
-            month_data = t_df[(t_df['Anno'] == anno) & (t_df['Mese'] == m)].sort_values('Data_dt')
-            
-            if month_data.empty:
-                messagebox.showwarning("Attenzione", "Nessun dato da esportare per il mese selezionato.")
-                return
-                
-            file_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf")], title="Salva Report Mensile in PDF")
-            if not file_path:
-                return
-                
-            doc = SimpleDocTemplate(file_path, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-            elements = []
-            styles = getSampleStyleSheet()
-            
-            title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=15, textColor=colors.HexColor('#1565c0'), alignment=1, spaceAfter=10)
-            subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Heading2'], fontSize=11, textColor=colors.HexColor('#333333'), alignment=1, spaceAfter=15)
-            normal_style = styles['Normal']
-            
-            elements.append(Paragraph("Stazione Meteo Amatoriale Monterotondo Scalo", title_style))
-            elements.append(Paragraph(f"Report Dettagliato e Riepilogo Mensile: {mese_str} {anno}", subtitle_style))
-            elements.append(Spacer(1, 5))
-            
-            min_row = month_data.loc[month_data['Temperatura_Min_C'].idxmin()]
-            max_row = month_data.loc[month_data['Temperatura_Max_C'].idxmax()]
-            mean_temp = month_data['Temperatura_Media_C'].mean()
-            mean_hum = month_data['Umidita_Perc'].mean()
-            tot_rain = month_data['Pioggia_mm'].sum()
-            
-            summary_data = [
-                [Paragraph("<b>Riepilogo ed Estremi del Mese</b>", normal_style), ""],
-                [Paragraph(f"<b>T. Minima Assoluta:</b> {min_row['Temperatura_Min_C']:.1f} °C ({min_row['Data']})", normal_style),
-                 Paragraph(f"<b>T. Massima Assoluta:</b> {max_row['Temperatura_Max_C']:.1f} °C ({max_row['Data']})", normal_style)],
-                [Paragraph(f"<b>Temperatura Media:</b> {mean_temp:.1f} °C", normal_style),
-                 Paragraph(f"<b>Umidità Media:</b> {mean_hum:.0f} %", normal_style)],
-                [Paragraph(f"<b>Pioggia Totale:</b> {tot_rain:.1f} mm", normal_style), ""]
-            ]
-            t_summary = Table(summary_data, colWidths=[260, 260])
-            t_summary.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,-1), colors.HexColor('#fffde7')),
-                ('BOX', (0,0), (-1,-1), 1, colors.HexColor('#fbc02d')),
-                ('SPAN', (0,0), (1,0)),
-                ('SPAN', (0,3), (1,3)),
-                ('PADDING', (0,0), (-1,-1), 6),
-            ]))
-            elements.append(t_summary)
-            elements.append(Spacer(1, 15))
-            
-            table_data = [["Data", "Temp Min (°C)", "Temp Max (°C)", "Temp Media (°C)", "Umidità (%)", "Pioggia (mm)"]]
-            for _, r in month_data.iterrows():
-                table_data.append([
-                    str(r['Data']),
-                    f"{r['Temperatura_Min_C']:.1f}",
-                    f"{r['Temperatura_Max_C']:.1f}",
-                    f"{r['Temperatura_Media_C']:.1f}",
-                    f"{r['Umidita_Perc']:.0f}",
-                    f"{r['Pioggia_mm']:.1f}"
-                ])
-            
-            t_daily = Table(table_data, colWidths=[95, 85, 85, 85, 75, 95])
-            t_daily.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1565c0')),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('BOTTOMPADDING', (0,0), (-1,0), 6),
-                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#dddddd')),
-                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#f2f2f2')]),
-            ]))
-            elements.append(t_daily)
-            
-            doc.build(elements)
-            messagebox.showinfo("Successo", "Report mensile esportato in PDF con successo!")
-        except ImportError:
-            messagebox.showerror("Libreria Mancante", "La libreria 'reportlab' non è installata.\nEsegui da terminale: pip install reportlab")
-        except Exception as ex:
-            messagebox.showerror("Errore", f"Impossibile generare il PDF:\n{str(ex)}")
 
-    def export_yearly_pdf_action(self):
-        """Esporta gli estremi annuali correnti in formato PDF"""
-        try:
-            from reportlab.lib.pagesizes import A4
-            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib import colors
-            
-            sel_anno = self.param_anno_y_var.get()
-            t_df = self.df.copy()
-            t_df['Anno'] = t_df['Data_dt'].dt.year
-            
-            if sel_anno != "Tutti":
-                anni = [int(sel_anno)]
-            else:
-                anni = sorted(t_df['Anno'].dropna().unique().astype(int).tolist())
-                
-            file_path = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf")], title="Salva Report Annuale in PDF")
-            if not file_path:
-                return
-                
-            doc = SimpleDocTemplate(file_path, pagesize=A4, rightMargin=30, leftMargin=30, topMargin=30, bottomMargin=30)
-            elements = []
-            styles = getSampleStyleSheet()
-            
-            title_style = ParagraphStyle('TitleStyle', parent=styles['Heading1'], fontSize=15, textColor=colors.HexColor('#1565c0'), alignment=1, spaceAfter=10)
-            subtitle_style = ParagraphStyle('SubTitleStyle', parent=styles['Heading2'], fontSize=11, textColor=colors.HexColor('#333333'), alignment=1, spaceAfter=15)
-            
-            elements.append(Paragraph("Stazione Meteo Amatoriale Monterotondo Scalo", title_style))
-            elements.append(Paragraph(f"Report Estremi Annuali (Filtro Anno: {sel_anno})", subtitle_style))
-            elements.append(Spacer(1, 10))
-            
-            table_data = [["Anno", "Temp Min (°C)", "Data Min", "Temp Max (°C)", "Data Max", "Temp Media (°C)", "Pioggia Totale (mm)"]]
-            for a in anni:
-                y_data = t_df[t_df['Anno'] == a]
-                if y_data.empty:
-                    continue
-                min_row = y_data.loc[y_data['Temperatura_Min_C'].idxmin()]
-                max_row = y_data.loc[y_data['Temperatura_Max_C'].idxmax()]
-                mean_temp = y_data['Temperatura_Media_C'].mean()
-                tot_rain = y_data['Pioggia_mm'].sum()
-                
-                table_data.append([
-                    str(a),
-                    f"{min_row['Temperatura_Min_C']:.1f}",
-                    str(min_row['Data']),
-                    f"{max_row['Temperatura_Max_C']:.1f}",
-                    str(max_row['Data']),
-                    f"{mean_temp:.1f}",
-                    f"{tot_rain:.1f}"
-                ])
-            
-            t_yearly = Table(table_data, colWidths=[65, 80, 90, 80, 90, 85, 90])
-            t_yearly.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1565c0')),
-                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
-                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-                ('BOTTOMPADDING', (0,0), (-1,0), 6),
-                ('GRID', (0,0), (-1,-1), 0.5, colors.HexColor('#dddddd')),
-                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#f2f2f2')]),
-            ]))
-            elements.append(t_yearly)
-            
-            doc.build(elements)
-            messagebox.showinfo("Successo", "Report annuale esportato in PDF con successo!")
-        except ImportError:
-            messagebox.showerror("Libreria Mancante", "La libreria 'reportlab' non è installata.\nEsegui da terminale: pip install reportlab")
-        except Exception as ex:
-            messagebox.showerror("Errore", f"Impossibile generare il PDF:\n{str(ex)}")
+# Funzione per recuperare i dati live dall'endpoint standard 'current'
+def fetch_wunderground_data(station_id, api_key):
+  if not station_id or not api_key:
+    return None, "Credenziali Weather Underground mancanti nei Secrets."
 
-    def open_manual_entry(self):
-        win = Toplevel(self.root)
-        win.title("Inserisci Nuova Misura nel DB")
-        win.geometry("300x350")
-        win.resizable(False, False)
-        
-        fields = [
-            ("Data (YYYY-MM-DD)", datetime.now().strftime("%Y-%m-%d")),
-            ("Temp Min (°C)", "15.0"),
-            ("Temp Max (°C)", "25.0"),
-            ("Temp Media (°C)", "20.0"),
-            ("Umidità (%)", "60"),
-            ("Pioggia (mm)", "0.0")
-        ]
-        
-        entries = {}
-        for label, default_val in fields:
-            tk.Label(win, text=label, font=("Arial", 9)).pack(anchor="w", padx=20)
-            e = tk.Entry(win, font=("Arial", 10), width=25)
-            e.insert(0, default_val)
-            e.pack(padx=20, pady=2)
-            entries[label] = e
-            
-        def save_entry():
-            try:
-                data_str = entries["Data (YYYY-MM-DD)"].get().strip()
-                t_min = float(entries["Temp Min (°C)"].get().replace(',', '.'))
-                t_max = float(entries["Temp Max (°C)"].get().replace(',', '.'))
-                t_med = float(entries["Temp Media (°C)"].get().replace(',', '.'))
-                hum = float(entries["Umidità (%)"].get().replace(',', '.'))
-                rain = float(entries["Pioggia (mm)"].get().replace(',', '.'))
-                
-                conn = sqlite3.connect(DB_NAME)
-                cursor = conn.cursor()
-                cursor.execute('''
-                    INSERT OR REPLACE INTO misurazioni (Data, Temperatura_Min_C, Temperatura_Max_C, Temperatura_Media_C, Umidita_Perc, Pioggia_mm)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                ''', (data_str, t_min, t_max, t_med, hum, rain))
-                conn.commit()
-                conn.close()
-                
-                self.load_from_db()
-                win.destroy()
-                messagebox.showinfo("Successo", "Misura salvata permanentemente nel database!")
-            except Exception as ex:
-                messagebox.showerror("Errore", f"Controlla i valori inseriti:\n{str(ex)}")
+  url = f"https://api.weather.com/v2/pws/observations/current?stationId={station_id}&format=json&units=m&apiKey={api_key}"
 
-        tk.Button(win, text="Salva nel Database", command=save_entry, bg="#1565c0", fg="white", font=("Arial", 10, "bold")).pack(pady=12)
+  try:
+    response = requests.get(url, timeout=10)
+    if response.status_code == 200:
+      return response.json(), "OK"
+    else:
+      return None, f"Errore HTTP {response.status_code}: {response.text}"
+  except Exception as e:
+    return None, f"Errore di connessione: {str(e)}"
 
-    def export_figure(self, fig):
-        """Metodo di servizio per esportare qualsiasi figura matplotlib in alta definizione (formato Instagram 4:5)"""
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".png",
-            filetypes=[("Immagine PNG", "*.png"), ("Immagine JPEG", "*.jpg"), ("Tutti i file", "*.*")],
-            title="Salva Grafico per Instagram"
+
+image_filename = "684225363_1433769152096303_7382692641941825555_n.png"
+if os.path.exists(image_filename):
+  try:
+    img = Image.open(image_filename)
+    w, h = img.size
+    new_h = int(h * 0.55)
+    top = 0
+    img_cropped = img.crop((0, top, w, top + new_h))
+    st.image(img_cropped, use_container_width=True)
+  except Exception:
+    st.image(image_filename, use_container_width=True)
+else:
+  st.title("🌦️ Stazione meteo amatoriale di Monterotondo Scalo")
+  st.warning(
+      f"⚠️ Immagine di intestazione ('{image_filename}') non trovata nella"
+      " cartella del repository."
+  )
+
+df = load_data()
+
+menu = st.sidebar.radio(
+    "Menu Principale",
+    [
+        "📊 Dashboard",
+        "🔍 Consultazione Database",
+        "📅 Dati Giornalieri",
+        "📈 Dati Mensili",
+        "📊 Grafici Annuali",
+        "📁 Esporta Dati",
+    ],
+)
+
+if "auth_ok" not in st.session_state:
+  st.session_state["auth_ok"] = False
+
+try:
+  wu_station_id = str(st.secrets["wunderground"]["station_id"])
+  wu_api_key = str(st.secrets["wunderground"]["api_key"])
+except Exception:
+  wu_station_id = ""
+  wu_api_key = ""
+
+try:
+  admin_password = str(st.secrets["admin"]["password"])
+except Exception:
+  admin_password = "admin123"
+
+if df.empty or "Data_dt" not in df.columns:
+  st.warning(
+      "Il database è attualmente vuoto o il file Excel su GitHub non contiene"
+      " dati validi."
+  )
+  st.stop()
+else:
+  if "Data_dt" not in df.columns:
+    df["Data_dt"] = pd.to_datetime(df["Data"], errors="coerce")
+
+# ==========================================
+# 1. DASHBOARD
+# ==========================================
+if menu == "📊 Dashboard":
+  is_online = False
+  wu_data, err_msg = None, "Credenziali mancanti"
+  if wu_station_id and wu_api_key:
+    wu_data, err_msg = fetch_wunderground_data(wu_station_id, wu_api_key)
+    if wu_data and "observations" in wu_data and len(wu_data["observations"]) > 0:
+      is_online = True
+
+  status_badge = "🟢 Online" if is_online else "🔴 Offline"
+  st.markdown(
+      f"""
+        <div style="display: flex; justify-content: center; align-items: center; gap: 15px; margin-top: 10px; margin-bottom: 20px;">
+            <h2 style="margin: 0; padding: 0;">Condizioni in tempo reale</h2>
+            <span style="font-weight: bold; font-size: 16px; white-space: nowrap;">{status_badge}</span>
+        </div>
+    """,
+      unsafe_allow_html=True,
+  )
+
+  if is_online:
+    try:
+      obs = wu_data["observations"][0]
+      metric = obs.get("metric", {})
+
+      temp_raw = metric.get("temp")
+      heat_raw = metric.get("heatIndex")
+      wind_chill_raw = metric.get("windChill")
+      feels_raw = (
+          heat_raw
+          if heat_raw is not None
+          else (
+              wind_chill_raw if wind_chill_raw is not None else temp_raw
+          )
+      )
+
+      hum_val = obs.get("humidity", "N.D.")
+      pressure_raw = metric.get("pressure", "N.D.")
+      rain_val = obs.get("precipTotal", 0.0)
+      obs_time = obs.get("obsTimeLocal", "Aggiornato di recente")
+
+      try:
+        temp_val = f"{float(temp_raw):.1f} °C"
+      except (ValueError, TypeError):
+        temp_val = "N.D."
+
+      try:
+        feels_val = f"{float(feels_raw):.1f} °C"
+      except (ValueError, TypeError):
+        feels_val = "N.D."
+
+      try:
+        pressure_val = f"{float(pressure_raw):.1f} hPa"
+      except (ValueError, TypeError):
+        pressure_val = "N.D."
+
+      col_l1, col_l2, col_l3, col_l4, col_l5 = st.columns(5)
+      with col_l1:
+        st.metric(label="🌡️ Temperatura", value=temp_val)
+      with col_l2:
+        st.metric(label="🌡️ Temp. Avvertita", value=feels_val)
+      with col_l3:
+        st.metric(
+            label="💧 Umidità",
+            value=(
+                f"{hum_val} %"
+                if hum_val != "N.D." and hum_val is not None
+                else "N.D."
+            ),
         )
-        if file_path:
-            try:
-                fig.savefig(file_path, dpi=300, bbox_inches='tight')
-                messagebox.showinfo("Successo", "Elemento esportato con successo in formato ottimizzato per Instagram (4:5)!")
-            except Exception as ex:
-                messagebox.showerror("Errore", f"Impossibile salvare il file:\n{str(ex)}")
+      with col_l4:
+        st.metric(label="⏱️ Pressione", value=pressure_val)
+      with col_l5:
+        st.metric(label="☔ Pioggia Odierna", value=f"{rain_val:.1f} mm")
 
-    def open_daily_comparison_dialog(self):
-        if self.df is None or self.df.empty:
-            messagebox.showwarning("Attenzione", "Nessun dato disponibile nel database!")
-            return
-        
-        win = Toplevel(self.root)
-        win.title("Seleziona Periodo per Confronto Giornaliero")
-        win.geometry("320x210")
-        win.resizable(False, False)
-        
-        tk.Label(win, text="Seleziona Anno:", font=("Arial", 10, "bold")).pack(pady=5)
-        temp_df = self.df.copy()
-        temp_df['Anno'] = temp_df['Data_dt'].dt.year
-        anni_disponibili = sorted(temp_df['Anno'].dropna().unique().astype(int).tolist())
-        
-        if not anni_disponibili:
-            messagebox.showwarning("Attenzione", "Nessun anno valido trovato nei dati.")
-            win.destroy()
-            return
-            
-        selected_anno = tk.StringVar(win)
-        selected_anno.set(str(anni_disponibili[-1]))
-        dropdown_anno = tk.OptionMenu(win, selected_anno, *[str(a) for a in anni_disponibili])
-        dropdown_anno.config(font=("Arial", 10), width=15)
-        dropdown_anno.pack(pady=2)
-        
-        tk.Label(win, text="Seleziona Mese:", font=("Arial", 10, "bold")).pack(pady=5)
-        mesi_nomi = [
-            "Gennaio", "Febbraio", "Marzo", "Aprile", "Maggio", "Giugno",
-            "Luglio", "Agosto", "Settembre", "Ottobre", "Novembre", "Dicembre"
-        ]
-        selected_mese = tk.StringVar(win)
-        selected_mese.set(mesi_nomi[0])
-        dropdown_mese = tk.OptionMenu(win, selected_mese, *mesi_nomi)
-        dropdown_mese.config(font=("Arial", 10), width=15)
-        dropdown_mese.pack(pady=2)
-        
-        def generate_daily_comparison():
-            anno = int(selected_anno.get())
-            mese_str = selected_mese.get()
-            mesi_dict = {
-                "Gennaio": 1, "Febbraio": 2, "Marzo": 3, "Aprile": 4,
-                "Maggio": 5, "Giugno": 6, "Luglio": 7, "Agosto": 8,
-                "Settembre": 9, "Ottobre": 10, "Novembre": 11, "Dicembre": 12
-            }
-            m = mesi_dict[mese_str]
-            
-            try:
-                t_df = self.df.copy()
-                t_df['Anno'] = t_df['Data_dt'].dt.year
-                t_df['Mese'] = t_df['Data_dt'].dt.month
-                t_df['Giorno'] = t_df['Data_dt'].dt.day
-                
-                sel_data = t_df[(t_df['Anno'] == anno) & (t_df['Mese'] == m)].sort_values('Giorno')
-                
-                if sel_data.empty:
-                    messagebox.showinfo("Info", f"Nessun dato trovato per {mese_str} {anno}.")
-                    return
-                
-                win.destroy()
-                
-                chart_win = Toplevel(self.root)
-                chart_win.title(f"Confronto Giornaliero - {mese_str} {anno} vs Storico 1991-2000")
-                chart_win.geometry("800x860")
-                
-                top_toolbar = tk.Frame(chart_win)
-                top_toolbar.pack(fill="x", padx=10, pady=10)
-                
-                btn_export = tk.Button(top_toolbar, text="📸 Esporta Grafico per Instagram (4:5)", command=lambda: self.export_figure(fig), bg="#00695c", fg="white", font=("Arial", 10, "bold"), padx=10, pady=6)
-                btn_export.pack(side="left")
-                
-                container = tk.Frame(chart_win)
-                container.pack(fill="both", expand=True, padx=10, pady=5)
-                
-                fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(8, 10), dpi=100)
-                
-                days = list(range(1, 32))
-                sel_med_dict = dict(zip(sel_data['Giorno'], sel_data['Temperatura_Media_C']))
-                sel_rain_dict = dict(zip(sel_data['Giorno'], sel_data['Pioggia_mm']))
-                
-                d_list = []
-                s_med_list = []
-                s_rain_list = []
-                
-                for d in days:
-                    try:
-                        datetime(anno, m, d)
-                    except ValueError:
-                        continue
-                        
-                    d_list.append(d)
-                    s_med_list.append(sel_med_dict.get(d, float('nan')))
-                    s_rain_list.append(sel_rain_dict.get(d, 0.0))
-                
-                # Valori climatici 1991-2000 dalla tabella
-                clima_temp = CLIMA_1991_2000[m]["Temp_Media"]
-                clima_rain_tot = CLIMA_1991_2000[m]["Pioggia"]
-                
-                # --- Sottografo 1: Temperatura Media ---
-                ax1.plot(d_list, s_med_list, marker='o', color='#3f51b5', linewidth=2.5, label=f'Temp. Media {mese_str} {anno}')
-                ax1.axhline(clima_temp, color='#d32f2f', linestyle='--', linewidth=2, label=f'Media Storica Temp. 1991-2000 ({clima_temp} °C)')
-                ax1.set_title(f"Stazione Meteo Amatoriale Monterotondo Scalo\nConfronto Temperatura Media - {mese_str} {anno}", fontsize=14, fontweight='bold', pad=15)
-                ax1.set_ylabel("Temp. Media (°C)", fontsize=10)
-                ax1.set_xticks(d_list)
-                ax1.grid(True, linestyle='--', alpha=0.6)
-                ax1.legend(loc='upper right', fontsize=9)
-                
-                # --- Sottografo 2: Pioggia ---
-                ax2.bar(d_list, s_rain_list, color='#00acc1', alpha=0.8, label=f'Pioggia Giornaliera {mese_str} {anno}')
-                # Linea retta costante per il totale mensile storico 1991-2000 convertito in quota giornaliera equivalente di riferimento
-                num_giorni = len(d_list)
-                pioggia_media_quotidiana_storica = clima_rain_tot / num_giorni
-                ax2.axhline(pioggia_media_quotidiana_storica, color='#d32f2f', linestyle='--', linewidth=2, label=f'Media Storica 1991-2000 (Tot. Mensile: {clima_rain_tot} mm)')
-                ax2.set_title(f"Precipitazioni - {mese_str} {anno} (Tot. Mese: {sum(s_rain_list):.1f} mm vs Storico 1991-2000: {clima_rain_tot} mm)", fontsize=14, fontweight='bold', pad=15)
-                ax2.set_xlabel("Giorno del Mese", fontsize=10)
-                ax2.set_ylabel("Pioggia (mm)", fontsize=10)
-                ax2.set_xticks(d_list)
-                ax2.grid(True, axis='y', linestyle='--', alpha=0.6)
-                ax2.legend(loc='upper right', fontsize=9)
-                
-                fig.subplots_adjust(top=0.88, bottom=0.1, left=0.12, right=0.92, hspace=0.35)
-                
-                canvas = FigureCanvasTkAgg(fig, master=container)
-                canvas.draw()
-                canvas.get_tk_widget().pack(fill="both", expand=True)
-                
-            except Exception as ex:
-                messagebox.showerror("Errore", f"Errore durante la generazione del grafico:\n{str(ex)}")
+      st.markdown(
+          f"<p style='text-align: center; color: gray;'>Ultima rilevazione"
+          f" stazione: {obs_time}</p>",
+          unsafe_allow_html=True,
+      )
 
-        tk.Button(win, text="Genera Grafico", command=generate_daily_comparison, bg="#2e7d32", fg="white", font=("Arial", 10, "bold")).pack(pady=12)
+    except Exception as e:
+      st.warning(f"Errore nell'elaborazione dei dati meteo: {e}")
+  else:
+    if not wu_station_id or not wu_api_key:
+      st.info(
+          "💡 Configura le credenziali Weather Underground (`station_id` e"
+          " `api_key`) nella sezione [wunderground] dei Secrets di Streamlit."
+      )
+    else:
+      st.error(
+          "Impossibile recuperare i dati da Weather Underground. Dettaglio:"
+          f" {err_msg}"
+      )
 
-    def show_monthly_history(self):
-        if self.df is None or self.df.empty:
-            messagebox.showwarning("Attenzione", "Nessun dato disponibile nel database!")
-            return
-        
-        win = Toplevel(self.root)
-        win.title("Storico Mese")
-        win.geometry("300x160")
-        win.resizable(False, False)
-        
-        tk.Label
+  st.markdown("---")
+  st.subheader("Estremi Meteo")
+  st.markdown(
+      "<p style='text-align: center;'>Tabella riepilogativa con le due"
+      " temperature massime più alte e le due minime più basse per ogni"
+      " mese, inclusi i record assoluti.</p>",
+      unsafe_allow_html=True,
+  )
+
+  mesi_nomi = {
+      1: "Gennaio",
+      2: "Febbraio",
+      3: "Marzo",
+      4: "Aprile",
+      5: "Maggio",
+      6: "Giugno",
+      7: "Luglio",
+      8: "Agosto",
+      9: "Settembre",
+      10: "Ottobre",
+      11: "Novembre",
+      12: "Dicembre",
+  }
+
+  temp_df = df.copy()
+  temp_df["Mese_Num"] = temp_df["Data_dt"].dt.month
+
+  table_data = []
+  for m_num in range(1, 13):
+    m_data = temp_df[temp_df["Mese_Num"] == m_num]
+    if not m_data.empty:
+      tmax_ser = pd.to_numeric(m_data["Temperatura_Max_C"], errors="coerce")
+      tmin_ser = pd.to_numeric(m_data["Temperatura_Min_C"], errors="coerce")
+
+      m_data_clean = m_data.copy()
+      m_data_clean["T_Max_Num"] = tmax_ser
+      m_data_clean["T_Min_Num"] = tmin_ser
+
+      top2_max = m_data_clean.nlargest(2, "T_Max_Num")
+      max_str_list = []
+      for _, r in top2_max.iterrows():
+        max_str_list.append(
+            f"{r['Temperatura_Max_C']} °C ({str(r['Data']).split()[0]})"
+        )
+      max_str = " | ".join(max_str_list)
+
+      bot2_min = m_data_clean.nsmallest(2, "T_Min_Num")
+      min_str_list = []
+      for _, r in bot2_min.iterrows():
+        min_str_list.append(
+            f"{r['Temperatura_Min_C']} °C ({str(r['Data']).split()[0]})"
+        )
+      min_str = " | ".join(min_str_list)
+
+      table_data.append({
+          "Mese": mesi_nomi[m_num],
+          "Top 2 Temp Max": max_str,
+          "Top 2 Temp Min": min_str,
+      })
+
+  summary_df = pd.DataFrame(table_data)
+  if not summary_df.empty:
+    st.dataframe(
+        summary_df,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Mese": st.column_config.TextColumn("Mese", width="small"),
+            "Top 2 Temp Max": st.column_config.TextColumn(
+                "🔥 Top 2 Temperature Massime (Valore e Data)", width="large"
+            ),
+            "Top 2 Temp Min": st.column_config.TextColumn(
+                "❄️ Top 2 Temperature Minime (Valore e Data)", width="large"
+            ),
+        },
+    )
+
+  if not temp_df.empty:
+    temp_df["T_Max_Num"] = pd.to_numeric(
+        temp_df["Temperatura_Max_C"], errors="coerce"
+    )
+    temp_df["T_Min_Num"] = pd.to_numeric(
+        temp_df["Temperatura_Min_C"], errors="coerce"
+    )
+
+    abs_max_idx = temp_df["T_Max_Num"].idxmax()
+    abs_max_val = temp_df.loc[abs_max_idx, "Temperatura_Max_C"]
+    abs_max_date = str(temp_df.loc[abs_max_idx, "Data"]).split()[0]
+
+    abs_min_idx = temp_df["T_Min_Num"].idxmin()
+    abs_min_val = temp_df.loc[abs_min_idx, "Temperatura_Min_C"]
+    abs_min_date = str(temp_df.loc[abs_min_idx, "Data"]).split()[0]
+
+    st.markdown("### 🌟 Record Assoluti Generali")
+    col_a, col_b = st.columns(2)
+    col_a.metric(
+        "Temperatura Max Assoluta", f"{abs_max_val} °C", f"Data: {abs_max_date}"
+    )
+    col_b.metric(
+        "Temperatura Min Assoluta", f"{abs_min_val} °C", f"Data: {abs_min_date}"
+    )
+
+# ==========================================
+# 2. CONSULTAZIONE DATABASE
+# ==========================================
+elif menu == "🔍 Consultazione Database":
+  st.header("Consultazione Database (Intervallo Date)")
+
+  if df.empty:
+    st.info("Il database è attualmente vuoto.")
+  else:
+    min_d = df["Data_dt"].min().date()
+    max_d = df["Data_dt"].max().date()
+
+    col1, col2 = st.columns(2)
+    start_date = col1.date_input(
+        "Data Inizio", min_d, min_value=min_d, max_value=max_d
+    )
+    end_date = col2.date_input(
+        "Data Fine", max_d, min_value=min_d, max_value=max_d
+    )
+
+    filtered_df = df[
+        (df["Data_dt"].dt.date >= start_date)
+        & (df["Data_dt"].dt.date <= end_date)
+    ]
+    st.dataframe(
+        filtered_df.drop(
+            columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+# ==========================================
+# 3. DATI GIORNALIERI
+# ==========================================
+elif menu == "📅 Dati Giornalieri":
+  st.header("Dati Giornalieri & Grafico con Confronto Storico")
+
+  current_year = datetime.now().year
+  current_month = datetime.now().month
+
+  col1, col2 = st.columns(2)
+  anni_disp = sorted(df["Data_dt"].dt.year.dropna().unique())
+
+  default_anno_idx = (
+      anni_disp.index(current_year)
+      if current_year in anni_disp
+      else (len(anni_disp) - 1 if anni_disp else 0)
+  )
+  sel_anno = (
+      col1.selectbox("Seleziona Anno", anni_disp, index=default_anno_idx)
+      if anni_disp
+      else current_year
+  )
+
+  mesi_dict = {
+      "Gennaio": 1,
+      "Febbraio": 2,
+      "Marzo": 3,
+      "Aprile": 4,
+      "Maggio": 5,
+      "Giugno": 6,
+      "Luglio": 7,
+      "Agosto": 8,
+      "Settembre": 9,
+      "Ottobre": 10,
+      "Novembre": 11,
+      "Dicembre": 12,
+  }
+  mesi_list = list(mesi_dict.keys())
+  default_mese_name = [k for k, v in mesi_dict.items() if v == current_month][0]
+  default_mese_idx = (
+      mesi_list.index(default_mese_name) if default_mese_name in mesi_list else 0
+  )
+
+  sel_mese_str = col2.selectbox(
+      "Seleziona Mese", mesi_list, index=default_mese_idx
+  )
+  sel_mese_num = mesi_dict[sel_mese_str]
+
+  m_data = df[
+      (df["Data_dt"].dt.year == sel_anno)
+      & (df["Data_dt"].dt.month == sel_mese_num)
+  ]
+
+  if m_data.empty:
+    st.info("Nessun dato trovato per il mese e anno selezionati.")
+  else:
+    st.subheader(f"📊 Riepilogo Estremi - {sel_mese_str} {sel_anno}")
+
+    tmax_max = pd.to_numeric(m_data["Temperatura_Max_C"], errors="coerce").max()
+    tmin_min = pd.to_numeric(m_data["Temperatura_Min_C"], errors="coerce").min()
+    tmed_mean = pd.to_numeric(
+        m_data["Temperatura_Media_C"], errors="coerce"
+    ).mean()
+    rain_sum = pd.to_numeric(m_data["Pioggia_mm"], errors="coerce").sum()
+
+    hist_mese_data = df[df["Data_dt"].dt.month == sel_mese_num]
+    hist_tmed_mean = pd.to_numeric(
+        hist_mese_data["Temperatura_Media_C"], errors="coerce"
+    ).mean()
+    delta_tmed = (
+        tmed_mean - hist_tmed_mean
+        if not pd.isna(hist_tmed_mean) and not pd.isna(tmed_mean)
+        else 0.0
+    )
+
+    hist_rain_df = df[df["Data_dt"].dt.month == sel_mese_num].copy()
+    hist_rain_df["Anno_Val"] = hist_rain_df["Data_dt"].dt.year
+    hist_rain_df["Rain_Num"] = pd.to_numeric(
+        hist_rain_df["Pioggia_mm"], errors="coerce"
+    ).fillna(0)
+    yearly_rain_sums = hist_rain_df.groupby("Anno_Val")["Rain_Num"].sum()
+    hist_rain_mean = (
+        yearly_rain_sums.mean() if not yearly_rain_sums.empty else 0.0
+    )
+    delta_rain = (
+        rain_sum - hist_rain_mean
+        if not pd.isna(rain_sum) and not pd.isna(hist_rain_mean)
+        else 0.0
+    )
+
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric(
+        "Temp Max Assoluta",
+        f"{tmax_max:.1f} °C" if not pd.isna(tmax_max) else "N.D.",
+    )
+    c2.metric(
+        "Temp Min Assoluta",
+        f"{tmin_min:.1f} °C" if not pd.isna(tmin_min) else "N.D.",
+    )
+    c3.metric(
+        "Temp Media Mese",
+        f"{tmed_mean:.1f} °C" if not pd.isna(tmed_mean) else "N.D.",
+        delta=(
+            f"{delta_tmed:+.1f} °C vs storica"
+            if not pd.isna(tmed_mean)
+            else None
+        ),
+        delta_color="inverse",
+    )
+    c4.metric(
+        "Pioggia Totale",
+        f"{rain_sum:.1f} mm" if not pd.isna(rain_sum) else "0.0 mm",
+        delta=(
+            f"{delta_rain:+.1f} mm vs storica"
+            if not pd.isna(rain_sum) and not pd.isna(hist_rain_mean)
+            else None
+        ),
+    )
+
+    clima_tmed = CLIMA_1991_2000[sel_mese_num]["Temp_Media"]
+    clima_prain = CLIMA_1991_2000[sel_mese_num]["Pioggia"]
+
+    st.markdown(
+        f"<p style='text-align: center; color: gray;'>💡 Riferimento climatico 1991-2000 ({sel_mese_str}): Temp. Media = {clima_tmed} °C | Pioggia Totale = {clima_prain} mm</p>",
+        unsafe_allow_html=True,
+    )
+
+    st.markdown("---")
+
+    st.markdown(
+        "<p style='text-align: center;'><b>Confronto tra la temperatura"
+        " media misurata e le medie (stazione e 1991-2000), insieme"
+        " all'andamento dell'accumulo di pioggia.</b></p>",
+        unsafe_allow_html=True,
+    )
+
+    m_data_plot = m_data.copy()
+    m_data_plot["Giorno"] = m_data_plot["Data_dt"].dt.day
+    m_data_plot["T_Med_Num"] = pd.to_numeric(
+        m_data_plot["Temperatura_Media_C"], errors="coerce"
+    )
+    m_data_plot["Rain_Num"] = pd.to_numeric(
+        m_data_plot["Pioggia_mm"], errors="coerce"
+    ).fillna(0)
+    m_data_plot["Pioggia_Cumulata_Corrente"] = m_data_plot["Rain_Num"].cumsum()
+
+    fig, (ax1, ax2) = plt.subplots(
+        2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True
+    )
+
+    # AX1: Temperatura
+    # 1. Linea azzurra con le misure della stazione
+    ax1.plot(
+        m_data_plot["Giorno"],
+        m_data_plot["T_Med_Num"],
+        label=f"Misurata {sel_anno} (°C)",
+        color="#00bcd4",
+        linewidth=1.8,
+        marker="o",
+        markersize=3,
+    )
+    # 2. Linea orizzontale rossa per la media di stazione (database)
+    ax1.axhline(
+        hist_tmed_mean,
+        color="#d32f2f",
+        linestyle="--",
+        linewidth=1.8,
+        label=f"Media Stazione (DB): {hist_tmed_mean:.1f} °C",
+    )
+    # 3. Linea orizzontale verde con la temperatura media 1991-2000
+    ax1.axhline(
+        clima_tmed,
+        color="#2ca02c",
+        linestyle="-",
+        linewidth=1.8,
+        label=f"Media 1991-2000: {clima_tmed} °C",
+    )
+
+    ax1.set_title(
+        f"Confronto Temperatura & Accumulo Pioggia\n{sel_mese_str} {sel_anno}",
+        fontsize=11,
+        fontweight="bold",
+        pad=10,
+    )
+    ax1.set_ylabel("Temperatura (°C)", fontsize=9)
+    ax1.grid(True, linestyle="--", alpha=0.5)
+    ax1.legend(loc="upper right", fontsize=7)
+
+    # AX2: Pioggia
+    # 1. Linea blu per la misura di stazione
+    ax2.plot(
+        m_data_plot["Giorno"],
+        m_data_plot["Pioggia_Cumulata_Corrente"],
+        label=f"Accumulo {sel_anno} (mm)",
+        color="#1e88e5",
+        linewidth=1.8,
+        marker="o",
+        markersize=3,
+    )
+    # 2. Linea orizzontale rossa con la media di stazione (database)
+    ax2.axhline(
+        hist_rain_mean,
+        color="#d32f2f",
+        linestyle="--",
+        linewidth=1.8,
+        label=f"Media Stazione (DB): {hist_rain_mean:.1f} mm",
+    )
+    # 3. Linea orizzontale verde con la media 1991-2000
+    ax2.axhline(
+        clima_prain,
+        color="#2ca02c",
+        linestyle="-",
+        linewidth=1.8,
+        label=f"Media 1991-2000: {clima_prain} mm",
+    )
+
+    ax2.set_xlabel("Giorno del mese", fontsize=9)
+    ax2.set_ylabel("Pioggia Cumulata (mm)", fontsize=9)
+    ax2.grid(True, linestyle="--", alpha=0.5)
+    ax2.legend(loc="upper left", fontsize=7)
+
+    # Forza l'asse X a mostrare solo numeri interi (giorni)
+    ax2.xaxis.set_major_locator(ticker.MaxNLocator(integer=True))
+
+    plt.tight_layout()
+    st.pyplot(fig)
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", bbox_inches="tight")
+    buf.seek(0)
+
+    st.download_button(
+        label="📥 Scarica Grafico per Instagram (PNG 4:5)",
+        data=buf,
+        file_name=f"meteo_{sel_mese_str}_{sel_anno}.png",
+        mime="image/png",
+    )
+    plt.close(fig)
+
+    st.subheader("📋 Tutte le misurazioni del mese")
+    st.dataframe(
+        m_data.drop(
+            columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+
+# ==========================================
+# 4. DATI MENSILI
+# ==========================================
+elif menu == "📈 Dati Mensili":
+  st.header("Dati Mensili & Grafici con Confronto Storico")
+
+  current_year = datetime.now().year
+  temp_df = df.copy()
+  temp_df["Anno"] = temp_df["Data_dt"].dt.year
+  temp_df["T_Med_Num"] = pd.to_numeric(
+      temp_df["Temperatura_Media_C"], errors="coerce"
+  )
+  overall_hist_tmed = temp_df["T_Med_Num"].mean()
+
+  annual_list = []
+  for anno, group in temp_df.groupby("Anno"):
+    if group.empty:
+      continue
+
+    g_max = pd.to_numeric(group["Temperatura_Max_C"], errors="coerce")
+    g_min = pd.to_numeric(group["Temperatura_Min_C"], errors="coerce")
+    g_med = pd.to_numeric(group["Temperatura_Media_C"], errors="coerce")
+    g_rain = pd.to_numeric(group["Pioggia_mm"], errors="coerce")
+
+    max_idx = g_max.idxmax() if not g_max.dropna().empty else None
+    max_val = (
+        group.loc[max_idx, "Temperatura_Max_C"]
+        if max_idx is not None
+        else "N.D."
+    )
+    max_date = (
+        str(group.loc[max_idx, "Data"]).split()[0]
+        if max_idx is not None
+        else ""
+    )
+
+    min_idx = g_min.idxmin() if not g_min.dropna().empty else None
+    min_val = (
+        group.loc[min_idx, "Temperatura_Min_C"]
+        if min_idx is not None
+        else "N.D."
+    )
+    min_date = (
+        str(group.loc[min_idx, "Data"]).split()[0]
+        if min_idx is not None
+        else ""
+    )
+
+    ann_tmed = g_med.mean()
+    rain_sum = g_rain.sum()
+
+    annual_list.append({
+        "Anno": int(anno),
+        "Temp Max Assoluta (°C)": str(max_val),
+        "Data Max": max_date,
+        "Temp Min Assoluta (°C)": str(min_val),
+        "Data Min": min_date,
+        "Temp Media (°C)": (
+            f"{ann_tmed:.1f}" if not pd.isna(ann_tmed) else "N.D."
+        ),
+        "vs Storica (°C)": (
+            f"{(ann_tmed - overall_hist_tmed):+.1f}"
+            if not pd.isna(ann_tmed) and not pd.isna(overall_hist_tmed)
+            else "0.0"
+        ),
+        "Pioggia Totale (mm)": (
+            f"{rain_sum:.1f}" if not pd.isna(rain_sum) else "0.0"
+        ),
+    })
+
+  annual_df = pd.DataFrame(annual_list)
+  if not pd.isna(overall_hist_tmed):
+    st.markdown(
+        f"<p style='text-align: center;'>💡 <b>Media storica generale (tutti gli"
+        f" anni):</b> {overall_hist_tmed:.1f} °C</p>",
+        unsafe_allow_html=True,
+    )
+  st.dataframe(annual_df, use_container_width=True, hide_index=True)
+
+  if not annual_df.empty:
+    st.markdown("---")
+    st.markdown(
+        "<p style='text-align: center;'><b>Confronto tra la temperatura"
+        " media mensile misurata nell'anno selezionato e la media storica,"
+        " insieme al totale delle piogge mensili e alla media storica.</b></p>",
+        unsafe_allow_html=True,
+    )
+
+    anni_disponibili = annual_df["Anno"].tolist()
+    default_grafico_idx = (
+        anni_disponibili.index(current_year)
+        if current_year in anni_disponibili
+        else (len(anni_disponibili) - 1 if anni_disponibili else 0)
+    )
+
+    sel_anno_grafico = st.selectbox(
+        "Seleziona Anno per il Grafico",
+        anni_disponibili,
+        index=default_grafico_idx,
+    )
+    anno_data = temp_df[temp_df["Anno"] == sel_anno_grafico]
+
+    if not anno_data.empty:
+      anno_data_clean = anno_data.copy()
+      anno_data_clean["T_Max_Num"] = pd.to_numeric(
+          anno_data_clean["Temperatura_Max_C"], errors="coerce"
+      )
+      anno_data_clean["T_Min_Num"] = pd.to_numeric(
+          anno_data_clean["Temperatura_Min_C"], errors="coerce"
+      )
+      anno_data_clean["T_Med_Num"] = pd.to_numeric(
+          anno_data_clean["Temperatura_Media_C"], errors="coerce"
+      )
+      anno_data_clean["Rain_Num"] = pd.to_numeric(
+          anno_data_clean["Pioggia_mm"], errors="coerce"
+      )
+
+      mensile_anno = (
+          anno_data_clean.groupby(anno_data_clean["Data_dt"].dt.month)
+          .agg({
+              "T_Max_Num": "max",
+              "T_Min_Num": "min",
+              "T_Med_Num": "mean",
+              "Rain_Num": "sum",
+          })
+          .reset_index()
+      )
+
+      hist_prev_annuale = temp_df[temp_df["Anno"] < sel_anno_grafico]
+      if hist_prev_annuale.empty:
+        hist_prev_annuale = temp_df
+
+      hist_monthly_mean = (
+          hist_prev_annuale.groupby(hist_prev_annuale["Data_dt"].dt.month)[
+              "T_Med_Num"
+          ]
+          .mean()
+          .reset_index()
+      )
+      hist_monthly_mean.columns = ["Data_dt", "Temp_Media_Storica"]
+
+      hist_prev_annuale_rain = hist_prev_annuale.copy()
+      hist_prev_annuale_rain["Rain_Num"] = pd.to_numeric(
+          hist_prev_annuale_rain["Pioggia_mm"], errors="coerce"
+      ).fillna(0)
+      hist_prev_annuale_rain["Mese"] = hist_prev_annuale_rain["Data_dt"].dt.month
+      hist_prev_annuale_rain["Anno_Val"] = hist_prev_annuale_rain[
+          "Data_dt"
+      ].dt.year
+
+      monthly_by_year = (
+          hist_prev_annuale_rain.groupby(["Anno_Val", "Mese"])["Rain_Num"]
+          .sum()
+          .reset_index()
+      )
+      hist_monthly_rain = (
+          monthly_by_year.groupby("Mese")["Rain_Num"].mean().reset_index()
+      )
+      hist_monthly_rain.columns = ["Data_dt", "Pioggia_Media_Storica"]
+
+      mensile_anno = pd.merge(
+          mensile_anno, hist_monthly_mean, on="Data_dt", how="left"
+      )
+      mensile_anno = pd.merge(
+          mensile_anno, hist_monthly_rain, on="Data_dt", how="left"
+      )
+
+      fig_ann, (ax1_ann, ax2_ann) = plt.subplots(
+          2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True
+      )
+      mesi_brevi = [
+          "Gen",
+          "Feb",
+          "Mar",
+          "Apr",
+          "Mag",
+          "Giu",
+          "Lug",
+          "Ago",
+          "Set",
+          "Ott",
+          "Nov",
+          "Dic",
+      ]
+      x_labels = [mesi_brevi[int(m) - 1] for m in mensile_anno["Data_dt"]]
+      x = np.arange(len(x_labels))
+
+      ax1_ann.plot(
+          x,
+          mensile_anno["T_Med_Num"],
+          label=f"Media Misurata {sel_anno_grafico} (°C)",
+          color="#2ca02c",
+          marker="s",
+          linewidth=1.8,
+          markersize=4,
+      )
+      ax1_ann.plot(
+          x,
+          mensile_anno["Temp_Media_Storica"],
+          label="Media Storica (Anni Prec.) (°C)",
+          color="#ff7f0e",
+          marker="o",
+          linewidth=1.8,
+          markersize=4,
+          linestyle="--",
+      )
+      ax1_ann.set_title(
+          f"Confronto Temperatura Media Mensile & Pioggia\nAnno"
+          f" {sel_anno_grafico}",
+          fontsize=11,
+          fontweight="bold",
+          pad=10,
+      )
+      ax1_ann.set_ylabel("Temperatura (°C)", fontsize=9)
+      ax1_ann.grid(True, linestyle="--", alpha=0.5)
+      ax1_ann.legend(loc="upper right", fontsize=7)
+
+      width = 0.35
+      ax2_ann.bar(
+          x - width / 2,
+          mensile_anno["Rain_Num"],
+          width,
+          label=f"Pioggia {sel_anno_grafico} (mm)",
+          color="#1c83e1",
+          alpha=0.8,
+      )
+      ax2_ann.bar(
+          x + width / 2,
+          mensile_anno["Pioggia_Media_Storica"],
+          width,
+          label="Media Storica (mm)",
+          color="#d62728",
+          alpha=0.8,
+      )
+      ax2_ann.set_ylabel("Pioggia (mm)", fontsize=9)
+      ax2_ann.grid(True, linestyle="--", alpha=0.5)
+      ax2_ann.legend(loc="upper right", fontsize=7)
+      ax2_ann.set_xticks(x)
+      ax2_ann.set_xticklabels(x_labels)
+
+      plt.tight_layout()
+      st.pyplot(fig_ann)
+
+      buf_ann = io.BytesIO()
+      fig_ann.savefig(buf_ann, format="png", bbox_inches="tight")
+      buf_ann.seek(0)
+
+      st.download_button(
+          label=(
+              "📥 Scarica Grafico Anno "
+              f"{sel_anno_grafico} per Instagram (PNG 4:5)"
+          ),
+          data=buf_ann,
+          file_name=f"meteo_anno_{sel_anno_grafico}.png",
+          mime="image/png",
+      )
+      plt.close(fig_ann)
+
+# ==========================================
+# 5. GRAFICI ANNUALI (GLOBALE)
+# ==========================================
+elif menu == "📊 Grafici Annuali":
+  st.header("Grafici Annuali Globali (Temperatura & Pioggia)")
+  st.write(
+      "Panoramica complessiva di tutti gli anni registrati nel database:"
+      " temperatura media annua e pioggia totale annua, senza alcuna"
+      " selezione richiesta."
+  )
+
+  temp_df = df.copy()
+  temp_df["Anno"] = temp_df["Data_dt"].dt.year
+  temp_df["T_Med_Num"] = pd.to_numeric(
+      temp_df["Temperatura_Media_C"], errors="coerce"
+  )
+  temp_df["Rain_Num"] = pd.to_numeric(temp_df["Pioggia_mm"], errors="coerce")
+
+  annuale_globale = (
+      temp_df.groupby("Anno")
+      .agg({"T_Med_Num": "mean", "Rain_Num": "sum"})
+      .reset_index()
+  )
+
+  if annuale_globale.empty:
+    st.info("Nessun dato disponibile per generare i grafici annuali.")
+  else:
+    fig_glob, (ax1_g, ax2_g) = plt.subplots(
+        2, 1, figsize=(8, 7), dpi=180, sharex=True
+    )
+
+    ax1_g.plot(
+        annuale_globale["Anno"],
+        annuale_globale["T_Med_Num"],
+        label="Temperatura Media Annua (°C)",
+        color="#2ca02c",
+        marker="o",
+        linewidth=2,
+        markersize=6,
+    )
+    ax1_g.set_title(
+        "Andamento Storico - Temperatura Media Annua & Pioggia Totale",
+        fontsize=12,
+        fontweight="bold",
+        pad=12,
+    )
+    ax1_g.set_ylabel("Temperatura Media (°C)", fontsize=10)
+    ax1_g.grid(True, linestyle="--", alpha=0.5)
+    ax1_g.legend(loc="upper right", fontsize=8)
+
+    ax2_g.bar(
+        annuale_globale["Anno"],
+        annuale_globale["Rain_Num"],
+        label="Pioggia Totale Annua (mm)",
+        color="#1c83e1",
+        alpha=0.8,
+        width=0.6,
+    )
+    ax2_g.set_xlabel("Anno", fontsize=10)
+    ax2_g.set_ylabel("Pioggia Totale (mm)", fontsize=10)
+    ax2_g.grid(True, linestyle="--", alpha=0.5)
+    ax2_g.legend(loc="upper right", fontsize=8)
+    ax2_g.set_xticks(annuale_globale["Anno"])
+
+    plt.tight_layout()
+    st.pyplot(fig_glob)
+
+    buf_glob = io.BytesIO()
+    fig_glob.savefig(buf_glob, format="png", bbox_inches="tight")
+    buf_glob.seek(0)
+
+    st.download_button(
+        label="📥 Scarica Grafico Annuale Globale (PNG)",
+        data=buf_glob,
+        file_name="meteo_grafico_annuale_globale.png",
+        mime="application/octet-stream",
+    )
+    plt.close(fig_glob)
+
+# ==========================================
+# 6. ESPORTA DATI (PROTETTO)
+# ==========================================
+elif menu == "📁 Esporta Dati":
+  st.header("📁 Esporta Dati & Backup (Area Riservata)")
+
+  if not st.session_state["auth_ok"]:
+    pwd = st.text_input(
+        "Inserisci la password amministratore per sbloccare questa sezione:",
+        type="password",
+        key="pwd_import",
+    )
+    if st.button("Accedi", key="btn_import"):
+      if pwd == admin_password:
+        st.session_state["auth_ok"] = True
+        st.rerun()
+      else:
+        st.error("❌ Password errata.")
+    st.stop()
+
+  st.success("🔓 Accesso autorizzato")
+  if st.button("🔒 Esci dall'area protetta", key="btn_out_import"):
+    st.session_state["auth_ok"] = False
+    st.rerun()
+
+  st.subheader("📤 Esporta database")
+  col_exp1, col_exp2 = st.columns(2)
+
+  with col_exp1:
+    if not df.empty:
+      csv_bytes = (
+          df.drop(
+              columns=["Data_dt", "T_Max_Num", "T_Min_Num"], errors="ignore"
+          )
+          .to_csv(index=False)
+          .encode("utf-8")
+      )
+      st.download_button(
+          "📥 Scarica dati in CSV",
+          data=csv_bytes,
+          file_name="export_meteo.csv",
+          mime="text/csv",
+      )
+
+  with col_exp2:
+    if os.path.exists(DB_NAME):
+      with open(DB_NAME, "rb") as f:
+        db_bytes = f.read()
+      st.download_button(
+          "📥 Scarica Database (.db)",
+          data=db_bytes,
+          file_name="meteo_database.db",
+          mime="application/octet-stream",
+      )
