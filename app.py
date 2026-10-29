@@ -17,6 +17,22 @@ DB_NAME = "meteo_database.db"
 # URL del file Excel raw su GitHub
 URL_GITHUB_FILE = "https://raw.githubusercontent.com/Meteo-Scalo/Stazione-Meteo/main/dati_meteo_esempio.xlsx"
 
+# Tabella climatica di riferimento 1991-2000
+CLIMA_1991_2000 = {
+    1: {"Temp_Media": 6.1, "Pioggia": 67},
+    2: {"Temp_Media": 6.9, "Pioggia": 75},
+    3: {"Temp_Media": 10.1, "Pioggia": 77},
+    4: {"Temp_Media": 13.7, "Pioggia": 83},
+    5: {"Temp_Media": 17.9, "Pioggia": 60},
+    6: {"Temp_Media": 22.9, "Pioggia": 34},
+    7: {"Temp_Media": 25.7, "Pioggia": 24},
+    8: {"Temp_Media": 25.9, "Pioggia": 23},
+    9: {"Temp_Media": 20.9, "Pioggia": 84},
+    10: {"Temp_Media": 16.6, "Pioggia": 122},
+    11: {"Temp_Media": 11.6, "Pioggia": 135},
+    12: {"Temp_Media": 7.2, "Pioggia": 94}
+}
+
 st.set_page_config(
     page_title="Stazione meteo amatoriale di Monterotondo Scalo",
     layout="wide",
@@ -530,37 +546,22 @@ elif menu == "📅 Dati Giornalieri":
         ),
     )
 
-    if not pd.isna(hist_tmed_mean):
-      st.markdown(
-          f"<p style='text-align: center; color: gray;'>💡 Media storica di {sel_mese_str} calcolata sul totale degli anni: {hist_tmed_mean:.1f} °C | Pioggia media storica: {hist_rain_mean:.1f} mm</p>",
-          unsafe_allow_html=True,
-      )
+    clima_tmed = CLIMA_1991_2000[sel_mese_num]["Temp_Media"]
+    clima_prain = CLIMA_1991_2000[sel_mese_num]["Pioggia"]
+
+    st.markdown(
+        f"<p style='text-align: center; color: gray;'>💡 Riferimento climatico 1991-2000 ({sel_mese_str}): Temp. Media = {clima_tmed} °C | Pioggia Totale = {clima_prain} mm</p>",
+        unsafe_allow_html=True,
+    )
 
     st.markdown("---")
 
     st.markdown(
         "<p style='text-align: center;'><b>Confronto tra la temperatura"
-        " media misurata e la media storica, insieme all'andamento dell'accumulo"
-        " di pioggia (corrente vs storico).</b></p>",
+        " media misurata e le medie (stazione e 1991-2000), insieme"
+        " all'andamento dell'accumulo di pioggia.</b></p>",
         unsafe_allow_html=True,
     )
-
-    hist_prev = df[
-        (df["Data_dt"].dt.month == sel_mese_num)
-        & (df["Data_dt"].dt.year < sel_anno)
-    ]
-    if hist_prev.empty:
-      hist_prev = hist_mese_data
-
-    hist_prev["T_Med_Num"] = pd.to_numeric(
-        hist_prev["Temperatura_Media_C"], errors="coerce"
-    )
-    hist_daily_mean = (
-        hist_prev.groupby(hist_prev["Data_dt"].dt.day)["T_Med_Num"]
-        .mean()
-        .reset_index()
-    )
-    hist_daily_mean.columns = ["Giorno", "Temp_Media_Storica"]
 
     m_data_plot = m_data.copy()
     m_data_plot["Giorno"] = m_data_plot["Data_dt"].dt.day
@@ -571,34 +572,39 @@ elif menu == "📅 Dati Giornalieri":
         m_data_plot["Pioggia_mm"], errors="coerce"
     ).fillna(0)
     m_data_plot["Pioggia_Cumulata_Corrente"] = m_data_plot["Rain_Num"].cumsum()
-    # Linea retta costante pari alla media storica totale della pioggia per il mese selezionato
-    m_data_plot["Pioggia_Cumulata_Storica"] = hist_rain_mean
-
-    m_data_plot = pd.merge(
-        m_data_plot, hist_daily_mean, on="Giorno", how="left"
-    )
 
     fig, (ax1, ax2) = plt.subplots(
         2, 1, figsize=(5.5, 6.8), dpi=180, sharex=True
     )
 
+    # AX1: Temperatura
+    # 1. Linea azzurra con le misure della stazione
     ax1.plot(
         m_data_plot["Giorno"],
         m_data_plot["T_Med_Num"],
-        label=f"Media Misurata {sel_anno} (°C)",
-        color="#2ca02c",
+        label=f"Misurata {sel_anno} (°C)",
+        color="#00bcd4",
         linewidth=1.8,
         marker="o",
         markersize=3,
     )
-    ax1.plot(
-        m_data_plot["Giorno"],
-        m_data_plot["Temp_Media_Storica"],
-        label="Media Storica (Anni Prec.) (°C)",
-        color="#ff7f0e",
-        linewidth=1.8,
+    # 2. Linea orizzontale rossa per la media di stazione (database)
+    ax1.axhline(
+        hist_tmed_mean,
+        color="#d32f2f",
         linestyle="--",
+        linewidth=1.8,
+        label=f"Media Stazione (DB): {hist_tmed_mean:.1f} °C",
     )
+    # 3. Linea orizzontale verde con la temperatura media 1991-2000
+    ax1.axhline(
+        clima_tmed,
+        color="#2ca02c",
+        linestyle="-",
+        linewidth=1.8,
+        label=f"Media 1991-2000: {clima_tmed} °C",
+    )
+
     ax1.set_title(
         f"Confronto Temperatura & Accumulo Pioggia\n{sel_mese_str} {sel_anno}",
         fontsize=11,
@@ -609,23 +615,34 @@ elif menu == "📅 Dati Giornalieri":
     ax1.grid(True, linestyle="--", alpha=0.5)
     ax1.legend(loc="upper right", fontsize=7)
 
+    # AX2: Pioggia
+    # 1. Linea blu per la misura di stazione
     ax2.plot(
         m_data_plot["Giorno"],
         m_data_plot["Pioggia_Cumulata_Corrente"],
         label=f"Accumulo {sel_anno} (mm)",
-        color="#1c83e1",
+        color="#1e88e5",
         linewidth=1.8,
         marker="o",
         markersize=3,
     )
-    ax2.plot(
-        m_data_plot["Giorno"],
-        m_data_plot["Pioggia_Cumulata_Storica"],
-        label="Pioggia Media Storica (mm)",
-        color="#d62728",
-        linewidth=1.8,
+    # 2. Linea orizzontale rossa con la media di stazione (database)
+    ax2.axhline(
+        hist_rain_mean,
+        color="#d32f2f",
         linestyle="--",
+        linewidth=1.8,
+        label=f"Media Stazione (DB): {hist_rain_mean:.1f} mm",
     )
+    # 3. Linea orizzontale verde con la media 1991-2000
+    ax2.axhline(
+        clima_prain,
+        color="#2ca02c",
+        linestyle="-",
+        linewidth=1.8,
+        label=f"Media 1991-2000: {clima_prain} mm",
+    )
+
     ax2.set_xlabel("Giorno del mese", fontsize=9)
     ax2.set_ylabel("Pioggia Cumulata (mm)", fontsize=9)
     ax2.grid(True, linestyle="--", alpha=0.5)
@@ -731,7 +748,8 @@ elif menu == "📈 Dati Mensili":
   annual_df = pd.DataFrame(annual_list)
   if not pd.isna(overall_hist_tmed):
     st.markdown(
-        f"<p style='text-align: center;'>💡 <b>Media storica generale (tutti gli anni):</b> {overall_hist_tmed:.1f} °C</p>",
+        f"<p style='text-align: center;'>💡 <b>Media storica generale (tutti gli"
+        f" anni):</b> {overall_hist_tmed:.1f} °C</p>",
         unsafe_allow_html=True,
     )
   st.dataframe(annual_df, use_container_width=True, hide_index=True)
@@ -864,7 +882,8 @@ elif menu == "📈 Dati Mensili":
           linestyle="--",
       )
       ax1_ann.set_title(
-          f"Confronto Temperatura Media Mensile & Pioggia\nAnno {sel_anno_grafico}",
+          f"Confronto Temperatura Media Mensile & Pioggia\nAnno"
+          f" {sel_anno_grafico}",
           fontsize=11,
           fontweight="bold",
           pad=10,
@@ -904,7 +923,10 @@ elif menu == "📈 Dati Mensili":
       buf_ann.seek(0)
 
       st.download_button(
-          label=f"📥 Scarica Grafico Anno {sel_anno_grafico} per Instagram (PNG 4:5)",
+          label=(
+              "📥 Scarica Grafico Anno "
+              f"{sel_anno_grafico} per Instagram (PNG 4:5)"
+          ),
           data=buf_ann,
           file_name=f"meteo_anno_{sel_anno_grafico}.png",
           mime="image/png",
